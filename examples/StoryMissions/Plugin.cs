@@ -17,7 +17,7 @@ namespace StoryMissions;
 /// are registered once, and the API restores missions, progress and declared choices itself.
 /// </summary>
 [BepInPlugin(Id, "Story Missions example", "1.0.0")]
-// Version floor omitted on purpose: in-repo examples track the development API, which
+    // Version floor omitted on purpose: in-repo examples track the development API, which
     // is deliberately unversioned (0.0.0); real consumers name the release they require.
     [BepInDependency(ModApi.PluginId)]
 public sealed class Plugin : BaseUnityPlugin

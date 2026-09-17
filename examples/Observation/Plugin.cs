@@ -17,7 +17,7 @@ namespace Observation;
 /// The Unity-free injected consumers in `Consumers/` show the same discipline as plain .NET classes.
 /// </summary>
 [BepInPlugin(Id, "Observation example", "1.0.0")]
-// Version floor omitted on purpose: in-repo examples track the development API, which
+    // Version floor omitted on purpose: in-repo examples track the development API, which
     // is deliberately unversioned (0.0.0); real consumers name the release they require.
     [BepInDependency(ModApi.PluginId)]
 [BepInProcess("VanguardGalaxy.exe")]

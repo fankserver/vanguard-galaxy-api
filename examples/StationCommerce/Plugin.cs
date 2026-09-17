@@ -19,7 +19,7 @@ namespace StationCommerce;
 /// no serializer.
 /// </summary>
 [BepInPlugin(Id, "Station Commerce example (" + Variant + ")", "1.0.0")]
-// Version floor omitted on purpose: in-repo examples track the development API, which
+    // Version floor omitted on purpose: in-repo examples track the development API, which
     // is deliberately unversioned (0.0.0); real consumers name the release they require.
     [BepInDependency(ModApi.PluginId)]
 public sealed class Plugin : BaseUnityPlugin
@@ -87,7 +87,9 @@ public sealed class Plugin : BaseUnityPlugin
                 OwnedItemStorage.Armory));
             _itemStatus = status.ToString();
         }
-        // A maker's mark on your own trade good: match the display name this plugin authored and
+        // A maker's mark on your own trade good: match the display name this plugin authored — which
+        // also matches the sibling variant's identically named good, the cross-author composition
+        // this example exists to demonstrate — and
         // add one styled line. Every item tooltip goes through the shared native fill.
         _tip = ModApi.Services.Tooltips.RegisterItem(Id, (item, tip) =>
         {

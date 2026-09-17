@@ -25,7 +25,7 @@ namespace PocketWorlds;
 /// and site POIs go with it) — so a delete leaves no authored system, gate, wormhole or site behind.
 /// </summary>
 [BepInPlugin(Id, "Pocket Worlds example", "1.0.0")]
-// Version floor omitted on purpose: in-repo examples track the development API, which
+    // Version floor omitted on purpose: in-repo examples track the development API, which
     // is deliberately unversioned (0.0.0); real consumers name the release they require.
     [BepInDependency(ModApi.PluginId)]
 public sealed class Plugin : BaseUnityPlugin

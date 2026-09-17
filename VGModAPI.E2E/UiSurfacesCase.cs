@@ -124,7 +124,7 @@ internal static class UiSurfacesCase
         foreach (var row in rows.Values)
             Require(settings.GetType().GetMethod("TryReset", Any)!.Invoke(settings, new[] { row }) is true, "Setting reset refused");
         Require(Count() == before + 1, "Resetting global preferences erased per-save progress");
-        Debug.Log("UI Surfaces E2E: four typed settings, immediate window updates, config persistence, pause/resume count, and reset without losing progress passed.");
+        Debug.Log("UI Surfaces E2E: six typed settings, immediate window updates, config persistence, pause/resume count, and reset without losing progress passed.");
         return StepResult.Pass("Settings/config and window progress verified; no native disk saves attempted");
     }
 }
