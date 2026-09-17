@@ -9,6 +9,7 @@ public sealed partial class Plugin
     private ConfigEntry<int> _goal = null!;
     private ConfigEntry<float> _opacity = null!;
     private ConfigEntry<string> _theme = null!;
+    private ConfigEntry<bool> _showGoal = null!;
     private IModSettingsProvider? _settings;
 
     private void ConfigurePreferences()
@@ -18,6 +19,7 @@ public sealed partial class Plugin
         _goal = Config.Bind("Window", "VisitGoal", 10, new ConfigDescription("Window-open goal displayed for each save.", new AcceptableValueRange<int>(1, 100)));
         _opacity = Config.Bind("Window", "Opacity", .9f, new ConfigDescription("Example window opacity.", new AcceptableValueRange<float>(.3f, 1f)));
         _theme = Config.Bind("Window", "Theme", "blue", new ConfigDescription("Example window theme.", new AcceptableValueList<string>("blue", "amber")));
+        _showGoal = Config.Bind("Behavior", "ShowVisitGoal", true, "Show the global visit goal beside this save's count.");
         Config.SettingChanged += PreferenceChanged;
     }
 
@@ -35,6 +37,8 @@ public sealed partial class Plugin
         Publish(new ChoiceModSetting("theme", "Window", "Color theme", "Changes the open window immediately.",
             (string)_theme.DefaultValue, new[] { new ModSettingChoice("blue", "Blue"), new ModSettingChoice("amber", "Amber") },
             () => _theme.Value, value => _theme.Value = value, order: 3));
+        Publish(new BoolModSetting("show-goal", "Behavior", "Show visit goal", "Show or hide the global goal beside this save's progress.",
+            (bool)_showGoal.DefaultValue, () => _showGoal.Value, value => _showGoal.Value = value, order: 0));
     }
 
     private void Publish(ModSettingDefinition definition)

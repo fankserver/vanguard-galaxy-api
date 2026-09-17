@@ -139,7 +139,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     {
         if (_window == null || _windowLabel == null) return;
         var count = _visits?.Count;
-        var progress = count.HasValue ? $"{count.Value} / {_goal.Value}" : "unavailable";
+        var progress = count.HasValue ? (_showGoal.Value ? $"{count.Value} / {_goal.Value}" : count.Value.ToString()) : "unavailable";
         var state = _visits?.State;
         var status = state == null ? "unregistered" : state.Kind + (state.Kind == SaveDataStateKind.Blocked ? ": " + state.Reason : "");
         _windowLabel.text = $"Window opens in this save: {progress}\nSave data: {status}\n{_lastOpen}\nGlobal preferences: Mods > UI Surfaces > Settings\nUse the shared HUD button to hide this window.";

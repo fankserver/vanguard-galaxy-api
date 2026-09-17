@@ -9,9 +9,11 @@ checkout; do not distribute it as a 0.2.8-compatible consumer.
 
 ## Try it
 
-1. Open **Mods > UI Surfaces example > Settings**. The example publishes all four
-   setting types: **Count window opens** (bool), **Visit goal** (integer), **Window
-   opacity** (float), and **Color theme** (choice). Reset restores each default.
+1. Open **Mods > UI Surfaces example > Settings**. The **Window** group publishes
+   all four setting types: **Count window opens** (bool), **Visit goal** (integer),
+   **Window opacity** (float), and **Color theme** (choice). The **Behavior** group
+   adds **Show visit goal** (bool), demonstrating multiple group headers. **Reset all**
+   restores every default.
 2. Start or load a game. Use the top-right **Example window** HUD button. Each open
    increments this save's counter when counting and save-data mutation are allowed.
 3. Change the goal, opacity, or theme. The existing window updates immediately.
@@ -29,7 +31,7 @@ trigger saves, change save paths, or load saves on your behalf.
 
 | Data | Owner / lifetime |
 |---|---|
-| Count toggle, goal, opacity, theme | BepInEx config (`vgmodapi.example.ui-surfaces.cfg`), global across games and restarts. The settings API uses getter/setter callbacks; it does not store another copy. |
+| Count toggle, goal display toggle, goal, opacity, theme | BepInEx config (`vgmodapi.example.ui-surfaces.cfg`), global across games and restarts. The settings API uses getter/setter callbacks; it does not store another copy. |
 | Window-open count | VGModAPI `SaveData`, per save. Registered once before a session starts; captured on supported game saves and restored by the API on load/new game. |
 | Window visibility, Forge inspector | Temporary UI state, discarded with the UI host/session. |
 
@@ -39,7 +41,7 @@ failed registration does not create a fake in-memory persistence fallback.
 
 ## Files to copy or adapt
 
-- `Plugin.Settings.cs`: four explicit `ConfigEntry`-backed registrations. Settings
+- `Plugin.Settings.cs`: five explicit `ConfigEntry`-backed registrations across two groups. Settings
   acquire their authenticated provider in `Start`, after BepInEx's `Awake` setup.
 - `WindowVisits.cs`: Unity-free custom save-data example. Four-byte nonnegative
   counter, schema version 1; invalid payloads are rejected, not silently reset.
