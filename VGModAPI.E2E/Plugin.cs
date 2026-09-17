@@ -48,6 +48,8 @@ public sealed class Plugin : BaseUnityPlugin
                 throw new InvalidOperationException("Missing controller deadline.");
             _caseId = requested switch
             {
+                EquipmentPolicyCase.Id => EquipmentPolicyCase.Id,
+                EquipmentTargetingCase.Id => EquipmentTargetingCase.Id,
                 ModSettingsMenuCase.Id => ModSettingsMenuCase.Id,
                 FreshSessionCase.Id => FreshSessionCase.Id,
                 PocketWorldsCase.Id => PocketWorldsCase.Id,
@@ -73,6 +75,8 @@ public sealed class Plugin : BaseUnityPlugin
             var remaining = (deadline - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) / 1000.0;
             _test = _caseId switch
             {
+                EquipmentPolicyCase.Id => new GameTest(EquipmentPolicyCase.Steps(_lifecycle, _events), remaining),
+                EquipmentTargetingCase.Id => new GameTest(EquipmentTargetingCase.Steps(_lifecycle, _events), remaining),
                 ModSettingsMenuCase.Id => new GameTest(ModSettingsMenuCase.Steps(), remaining),
                 FreshSessionCase.Id => new GameTest(FreshSessionCase.Steps(_lifecycle, _events), remaining),
                 PocketWorldsCase.Id => new GameTest(PocketWorldsCase.Steps(_lifecycle, _events, _travelEvents), remaining),

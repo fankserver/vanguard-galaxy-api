@@ -16,10 +16,13 @@ import uuid
 
 CASE = "fresh-session"
 KNOWN_CASES = ("fresh-session", "pocket-worlds", "story-missions", "observation",
-              "cargo-recovery", "station-commerce", "ui-surfaces", "mod-settings-menu")
+              "cargo-recovery", "station-commerce", "ui-surfaces", "mod-settings-menu",
+              "equipment-policy", "equipment-targeting")
 HANDSHAKE = "--vgmodapi-e2e"
 ASSEMBLIES = ("VGModAPI.dll", "VGModAPI.Core.dll", "VGModAPI.Abstractions.dll",
-              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "UiSurfaces.dll", "Newtonsoft.Json.dll")
+              "VGModAPI.Unity.dll", "VGModAPI.E2E.dll", "PocketWorlds.dll", "CargoRecovery.dll",
+              "StoryMissions.dll", "StationCommerce.dll", "StationCommerceB.dll", "UiSurfaces.dll",
+              "Observation.dll", "EquipmentTargeting.dll", "Newtonsoft.Json.dll")
 
 
 class E2EError(Exception):
@@ -65,11 +68,18 @@ class SaveGuard:
 
 class GameInstallation:
     """Reversible plugins/config staging. An interrupted run leaves an explicit backup."""
-    def __init__(self, game, build):
+    def __init__(self, game, build, extra=()):
         self.root = Path(game) / "BepInEx"
         self.build = Path(build)
+        self.extra = tuple(extra)
+        for name in self.extra:
+            if Path(name).name != name:
+                raise E2EError(f"--stage accepts bare file names only, got: {name}")
+            if not (self.build / name).is_file():
+                raise E2EError(f"Missing --stage file {name} in the build directory.")
         self.backup = self.root / ".vgmodapi-e2e-backup"
         self.moved = []
+        self.staged_extra = []
         self.created = []
 
     def __enter__(self):
@@ -95,8 +105,14 @@ class GameInstallation:
                 self.created.append(name)
             target = self.root / "plugins" / "VGModAPI.E2E"
             target.mkdir()
-            for name in ASSEMBLIES:
+            for name in ASSEMBLIES + self.extra:
                 shutil.copy2(self.build / name, target / name)
+                if name not in ASSEMBLIES:
+                    # Operator-supplied extra plugins are not built here; record exactly which bytes
+                    # were staged so any run is reproducible from the report alone.
+                    data = (self.build / name).read_bytes()
+                    self.staged_extra.append({"name": name, "sha256": hashlib.sha256(data).hexdigest(),
+                                              "mtimeMs": int((self.build / name).stat().st_mtime * 1000)})
             # The staging vacuums the real config/ for isolation, which drops the API back to its
             # disabled-by-default providers. Enable the ones the example cases exercise (Story drives
             # station-commerce's errand and the story-missions case; Bars backs the bar-contact examples).
@@ -311,6 +327,8 @@ def main(argv=None):
     parser.add_argument("--save-dir", type=nonempty_path)
     parser.add_argument("--timeout", type=int, default=90)
     parser.add_argument("--case", choices=KNOWN_CASES, default=CASE)
+    parser.add_argument("--stage", action="append", default=[], metavar="DLL",
+                        help="Extra assembly file (relative to --build-dir) to stage; repeatable.")
     parser.add_argument("--launch", action="store_true", help="explicit permission to stage plugins and launch the game")
     parser.add_argument("--report", type=nonempty_path, help="read/gate a previous report without a game")
     args = parser.parse_args(argv)
@@ -344,8 +362,9 @@ def main(argv=None):
     shutil.rmtree(runtime / "screenshots", ignore_errors=True)
     report = new_report()
     try:
-        with SaveGuard(saves, allow_missing=args.save_dir is None), GameInstallation(game, build):
+        with SaveGuard(saves, allow_missing=args.save_dir is None), GameInstallation(game, build, args.stage) as installation:
             run_game(game, runtime, args.timeout, report)
+        report["meta"]["stagedExtraAssemblies"] = list(installation.staged_extra)
         report["meta"]["realSavesUnchanged"] = True
         report["meta"]["installationRestored"] = True
     except (E2EError, OSError, KeyboardInterrupt) as error:

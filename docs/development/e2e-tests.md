@@ -82,6 +82,10 @@ set (all examples + the E2E harness are deployed), only the driven workflow diff
 make e2e E2E_CASE=pocket-worlds
 ```
 
+Extra plugin DLLs an operator wants staged (anything built into the build directory) are
+passed explicitly: `make e2e E2E_CASE=… E2E_STAGE=Foo.dll`. The harness never knows any
+consumer mod by name; each staged extra is recorded in the report with sha256 and mtime.
+
 ## `pocket-worlds`
 
 Tests the PocketWorlds example in a real game session: it clicks the rendered HUD
@@ -118,13 +122,32 @@ not miss the session by loading late.
 Loads both independent author variants (A and B) and asserts each registers the
 SAME author-local good, recipe and story-errand IDs through its own authenticated
 provider without collision, and that the recipe-before-item declaration resolves
-rather than hard-failing.
+rather than hard-failing. Finally forces the shared item tooltip fill for the
+owned good and asserts each variant's maker tip renders exactly once, styled.
 
 ## `ui-surfaces`
 
 Waits for the consumer-owned gameplay window container, then clicks the shared
 HUD launcher to create and toggle the owned window, asserting its live visibility.
-The Forge inspector is availability-dependent, so it is not gated here.
+Toggles all six typed settings through the settings service, asserting immediate
+window effects and BepInEx config persistence. The tooltip annotations are also
+driven through the example's own registrations: with the setting on, the tractor
+stat list and the Engineering mastery badge each carry the example's line exactly
+once; with it off, neither does. The Forge inspector is availability-dependent, so
+it is not gated here.
+
+## `equipment-policy`
+
+Verifies the equipment-targeting surface with API-owned registrations only: abstain-by-absence
+(vanilla cap), a registered rule at +2 borrowing exactly two free manual beams, a later rule
+staying invisible while an earlier one answers (first non-null wins), disposal handing the decision
+to the remaining rule, occupied beams never handed out, and teardown restoring vanilla behavior.
+All fixture state (beams, targets, temporary objects) is restored afterwards.
+
+## `equipment-targeting`
+
+Runs the in-repo EquipmentTargeting example as the mod under test: the `ExtraAutoBeam` setting
+alone gates one borrowed manual beam (off ⇒ vanilla cap, on ⇒ borrows a free manual beam).
 
 ## Coverage status
 

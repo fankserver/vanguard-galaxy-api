@@ -10,6 +10,7 @@ public sealed partial class Plugin
     private ConfigEntry<float> _opacity = null!;
     private ConfigEntry<string> _theme = null!;
     private ConfigEntry<bool> _showGoal = null!;
+    private ConfigEntry<bool> _annotate = null!;
     private IModSettingsProvider? _settings;
 
     private void ConfigurePreferences()
@@ -20,12 +21,27 @@ public sealed partial class Plugin
         _opacity = Config.Bind("Window", "Opacity", .9f, new ConfigDescription("Example window opacity.", new AcceptableValueRange<float>(.3f, 1f)));
         _theme = Config.Bind("Window", "Theme", "blue", new ConfigDescription("Example window theme.", new AcceptableValueList<string>("blue", "amber")));
         _showGoal = Config.Bind("Behavior", "ShowVisitGoal", true, "Show the global visit goal beside this save's count.");
+        _annotate = Config.Bind("Tooltips", "AnnotateModules", false, "Add this mod's note to ship module stat lists and the Engineering mastery badge.");
         Config.SettingChanged += PreferenceChanged;
     }
 
     private void Start()
     {
-        // Instance authentication is available after BepInEx has finished Awake.
+        // Tooltip contributions belong to the UI surfaces this example owns. They are registered
+        // unconditionally and gated by a typed preference: the callback abstains when it is off.
+        _moduleTip = ModApi.Services.Tooltips.RegisterShipModule(Id, (module, tip) =>
+        {
+            if (!_annotate.Value) return;
+            tip.AddLine($"UiSurfaces: {module.Kind} module, quality {module.QualityLevel}"
+                + (module.Tractor is { } tractor ? $" with {tractor.ManualBeamCount} manual beam(s)" : ""));
+        });
+        _treeTip = ModApi.Services.Tooltips.RegisterSkillTree(Id, (tree, tip) =>
+        {
+            if (!_annotate.Value || tree.Specialization != CommanderSpecialization.Engineering) return;
+            tip.AddLine($"UiSurfaces: Engineering mastery {tree.MasteryLevel}/{tree.MaximumLevel}", TooltipTextStyle.Bonus);
+        });
+        // Instance authentication is available after BepInEx has finished Awake. They stay live even
+        // when the settings provider is unavailable, because their gate is the ConfigEntry itself.
         _settings = ModApi.Services.Settings.AcquireProvider(this);
         if (_settings == null) { Logger.LogWarning("Example settings unavailable."); return; }
         Publish(new BoolModSetting("count-opens", "Window", "Count window opens", "Pause counting without erasing this save's progress.",
@@ -39,6 +55,8 @@ public sealed partial class Plugin
             () => _theme.Value, value => _theme.Value = value, order: 3));
         Publish(new BoolModSetting("show-goal", "Behavior", "Show visit goal", "Show or hide the global goal beside this save's progress.",
             (bool)_showGoal.DefaultValue, () => _showGoal.Value, value => _showGoal.Value = value, order: 0));
+        Publish(new BoolModSetting("annotate-tooltips", "Tooltips", "Annotate modules and mastery", "Opt in to the tooltip contributions demonstrated below.",
+            (bool)_annotate.DefaultValue, () => _annotate.Value, value => _annotate.Value = value, order: 0));
     }
 
     private void Publish(ModSettingDefinition definition)

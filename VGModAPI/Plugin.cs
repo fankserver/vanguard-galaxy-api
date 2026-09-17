@@ -132,6 +132,8 @@ public sealed partial class Plugin : BaseUnityPlugin
                 ["writeMetadata"] = typeof(SavePatches.WriteMetadata), ["storeFailure"] = typeof(SavePatches.StoreFailure)
             });
             InstallHud(assembly);
+            InstallEquipmentTargeting(assembly);
+            InstallTooltips(assembly);
             InstallGameplayUi(assembly);
             InstallAmbientTraffic(assembly);
             InstallUnitProtection(assembly);
@@ -155,6 +157,8 @@ public sealed partial class Plugin : BaseUnityPlugin
             // Stop observation even if a failed rollback leaves a detour installed.
             _adapter?.Guard(() => throw new InvalidOperationException("Adapter installation failed.", ex));
             TeardownHud();
+            TeardownEquipmentTargeting();
+            TeardownTooltips();
             TeardownGameplayUi();
             TeardownAmbientTraffic();
             TeardownUnitProtection();
@@ -168,6 +172,9 @@ public sealed partial class Plugin : BaseUnityPlugin
             var reason = ex is NotSupportedException && _inspectedGameAssembly == null
                 ? ServiceUnavailableReason.UnsupportedGame : ServiceUnavailableReason.BindingFailed;
             _hub.SetUnavailable("gameplay-ui", reason, ex.Message);
+            _hub.SetUnavailable("equipment", reason, ex.Message);
+            _hub.SetUnavailable("skill-trees", reason, ex.Message);
+            _hub.SetUnavailable("tooltips", reason, ex.Message);
             _hub.SetUnavailable("ambient-traffic", reason, ex.Message);
             _hub.SetUnavailable("unit-protection", reason, ex.Message);
             _hub.SetUnavailable("story-characters", reason, ex.Message);
@@ -1056,6 +1063,8 @@ public sealed partial class Plugin : BaseUnityPlugin
         ModApi.ClearServices(_serviceRoot);
         _hub?.Dispose(); // Close gates and preserve queued terminal delivery before releasing service views.
         StopDungeonPanel();
+        TeardownEquipmentTargeting();
+        TeardownTooltips();
         TeardownHud();
         TeardownGameplayUi();
         TeardownAmbientTraffic();
