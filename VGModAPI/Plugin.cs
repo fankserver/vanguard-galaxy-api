@@ -133,6 +133,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             });
             InstallHud(assembly);
             InstallTractorBeams(assembly);
+            InstallTooltips(assembly);
             InstallGameplayUi(assembly);
             InstallAmbientTraffic(assembly);
             InstallUnitProtection(assembly);
@@ -157,6 +158,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _adapter?.Guard(() => throw new InvalidOperationException("Adapter installation failed.", ex));
             TeardownHud();
             TeardownTractorBeams();
+            TeardownTooltips();
             TeardownGameplayUi();
             TeardownAmbientTraffic();
             TeardownUnitProtection();
@@ -1062,6 +1064,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub?.Dispose(); // Close gates and preserve queued terminal delivery before releasing service views.
         StopDungeonPanel();
         TeardownTractorBeams();
+        TeardownTooltips();
         TeardownHud();
         TeardownGameplayUi();
         TeardownAmbientTraffic();

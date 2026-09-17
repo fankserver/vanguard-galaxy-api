@@ -16,13 +16,18 @@ internal sealed class TooltipService : ITooltipService, IDisposable
     internal void SetAvailable(bool available)
     {
         _hub.CheckThread(); if (_disposed) return;
-        if (available) _hub.SetAvailable("tooltips", "Tractor module and skill-tree tooltip extensions bound.");
+        if (available) _hub.SetAvailable("tooltips", "Ship module, item and skill-tree tooltip extensions bound.");
         else _hub.SetUnavailable("tooltips", ServiceUnavailableReason.BindingFailed, "Tooltip extensions unavailable.");
     }
-    public IDisposable RegisterTractorModule(string pluginId, Action<TractorModule, Tooltip> describe)
+    public IDisposable RegisterShipModule(string pluginId, Action<ShipModule, Tooltip> describe)
     {
         if (describe == null) throw new ArgumentNullException(nameof(describe));
-        return Register(pluginId, typeof(TractorModule), (value, tooltip) => describe((TractorModule)value, tooltip));
+        return Register(pluginId, typeof(ShipModule), (value, tooltip) => describe((ShipModule)value, tooltip));
+    }
+    public IDisposable RegisterItem(string pluginId, Action<ItemInfo, Tooltip> describe)
+    {
+        if (describe == null) throw new ArgumentNullException(nameof(describe));
+        return Register(pluginId, typeof(ItemInfo), (value, tooltip) => describe((ItemInfo)value, tooltip));
     }
     public IDisposable RegisterSkillTree(string pluginId, Action<SkillTree, Tooltip> describe)
     {

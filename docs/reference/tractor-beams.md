@@ -45,10 +45,16 @@ Mastery scaling formulas remain in mods, not in the targeting API.
 ## Extend tooltips independently
 
 ```csharp
-var moduleTip = api.Tooltips.RegisterTractorModule("my.mod", (module, tooltip) =>
+// Any ship equipment module — filter by Kind for your family.
+var moduleTip = api.Tooltips.RegisterShipModule("my.mod", (module, tooltip) =>
 {
-    if (module.ManualBeamCount > 0)
+    if (module.Kind == ShipModuleKind.Tractor && module.Tractor?.ManualBeamCount > 0)
         tooltip.AddLine("Manual beams can also target automatically");
+});
+// Any inventory item: inventory, shop, loot and compare sources all route through it.
+var itemTip = api.Tooltips.RegisterItem("my.mod", (item, tooltip) =>
+{
+    if (item.Identifier == "scrap") tooltip.AddLine(item.DisplayName + " is worth more now", TooltipTextStyle.Bonus);
 });
 var masteryTip = api.Tooltips.RegisterSkillTree("my.mod", (tree, tooltip) =>
 {
@@ -57,6 +63,15 @@ var masteryTip = api.Tooltips.RegisterSkillTree("my.mod", (tree, tooltip) =>
             .Append(" (my mod)", TooltipTextStyle.Details);
 });
 ```
+
+`ShipModule` covers every native `Behaviour.Equipment.Module` family through the
+game-vocabulary `ShipModuleKind` (`Tractor`, `Mining`, `Salvage`, `ShieldGenerator`,
+`Reactor`, `DroneBay`, `TorpedoBay`, `Armor`, `CargoScoop`, `EngineThrusters`,
+`HangarBay`, `Hull`, `Painter`, `Repair`, `Scanner`, `Other`). `StatLines` shows the
+vanilla stat lines currently displayed and `DisplayName`/`QualityLevel` identify the
+module; the typed `Tractor` snapshot is non-null only for tractor modules. Item
+tooltips receive `ItemInfo` (`Identifier`, `DisplayName`, `Description`, `Count`,
+`ItemLevel`) for the item the source is showing.
 
 No equipment rule is required to add tooltip text. All skill-tree mastery tooltips
 are supported, not only Engineering. Lines append after native content; Bonus and
