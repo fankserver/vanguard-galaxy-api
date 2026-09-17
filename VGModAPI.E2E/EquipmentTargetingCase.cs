@@ -38,12 +38,14 @@ internal static class EquipmentTargetingCase
         if (module == null) return StepResult.Wait("player tractor module not ready");
         var example = NativeGameplay.PluginInstance("vgmodapi.example.equipment-targeting")!;
         var extraEntry = Get(example, "_extraAutoBeam")!; var extraValue = extraEntry.GetType().GetProperty("Value")!; var oldExtra = extraValue.GetValue(extraEntry);
+        var manualField = Field(moduleType, "amountOfBonusBeams"); var oldManual = manualField.GetValue(module);
         var beams = (IList)Get(module, "tractorBeams")!; int originalBeamCount = beams.Count;
         var originals = beams.Cast<object>().ToDictionary(b => b, b => Get(b, "target"));
         var temporary = new List<GameObject>();
         try
         {
             moduleType.GetMethod("CreateTractorBeams", Any)!.Invoke(module, new object[] { 3, true });
+            manualField.SetValue(module, (int)oldManual! + 3); // native capacity is bounded by the field, not the beam list
             var all = beams.Cast<object>().ToArray();
             var auto = all.Where(b => Get(b, "bonusBeam") is false).ToArray();
             var manual = all.Where(b => Get(b, "bonusBeam") is true).ToArray();
@@ -68,6 +70,7 @@ internal static class EquipmentTargetingCase
         finally
         {
             extraValue.SetValue(extraEntry, oldExtra);
+            manualField.SetValue(module, oldManual);
             foreach (var entry in originals) Field(entry.Key.GetType(), "target").SetValue(entry.Key, entry.Value);
             foreach (var b in beams.Cast<object>().Except(originals.Keys).ToArray()) Field(b.GetType(), "target").SetValue(b, null);
             while (beams.Count > originalBeamCount)

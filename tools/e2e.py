@@ -73,6 +73,8 @@ class GameInstallation:
         self.build = Path(build)
         self.extra = tuple(extra)
         for name in self.extra:
+            if Path(name).name != name:
+                raise E2EError(f"--stage accepts bare file names only, got: {name}")
             if not (self.build / name).is_file():
                 raise E2EError(f"Missing --stage file {name} in the build directory.")
         self.backup = self.root / ".vgmodapi-e2e-backup"
