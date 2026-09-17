@@ -12,6 +12,7 @@ public sealed class ModServices
     private readonly int _thread = Thread.CurrentThread.ManagedThreadId;
     private readonly ILifecycleService _lifecycle;
     private readonly IModInformationService _mods;
+    private readonly IModSettingsService _settings;
     private readonly ISaveDataService _saveData;
     private readonly IMissionService _missions;
     private readonly ITravelService _travel;
@@ -39,6 +40,7 @@ public sealed class ModServices
     public IWorldService World { get { CheckThread(); return _world; } }
     public ILifecycleService Lifecycle { get { CheckThread(); return _lifecycle; } }
     public IModInformationService Mods { get { CheckThread(); return _mods; } }
+    public IModSettingsService Settings { get { CheckThread(); return _settings; } }
     public ISaveDataService SaveData { get { CheckThread(); return _saveData; } }
     public IMissionService Missions { get { CheckThread(); return _missions; } }
     public ITravelService Travel { get { CheckThread(); return _travel; } }
@@ -61,12 +63,13 @@ public sealed class ModServices
 
     public IBarService Bars { get { CheckThread(); return _bars; } }
 
-    internal ModServices(ILifecycleService lifecycle, IModInformationService mods, ISaveDataService saveData,
+    internal ModServices(ILifecycleService lifecycle, IModInformationService mods, IModSettingsService settings, ISaveDataService saveData,
         IMissionService missions, ITravelService travel, IStationService station, IRecipeService recipes, IRecipeQuoteService recipeQuotes,
         ICraftingJobService craftingJobs, ICraftingCommandService craftingCommands, IHudService hud, IForgeUiService forgeUi, IBoardingRuleService boardingRules, IDungeonService dungeons, IStoryService story, IBarService bars, IWorldService world, IDialogueService dialogue, IGameService game, IOwnedItemService items, IOwnedRecipeService recipeRegistration, IGameplayUiService gameplayUi)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mods = mods ?? throw new ArgumentNullException(nameof(mods));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _saveData = saveData ?? throw new ArgumentNullException(nameof(saveData));
         _missions = missions ?? throw new ArgumentNullException(nameof(missions));
         _travel = travel ?? throw new ArgumentNullException(nameof(travel));

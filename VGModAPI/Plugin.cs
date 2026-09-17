@@ -57,6 +57,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     private bool _pendingProtectionRecovery;
     private bool _identityHooksBound;
     private ModInformationCatalog? _modCatalog;
+    private ModSettingsService? _modSettings;
     private ModMenuModule? _modMenu;
     private ModUpdateService? _updates;
     private ModUpdatePresenter? _updatePresenter;
@@ -99,6 +100,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         _hub.SetUnavailable("boarding-rules", ServiceUnavailableReason.Disabled, "Disabled by configuration; experimental.");
         _hub.SetUnavailable("owned-bars", ServiceUnavailableReason.BindingFailed, "Not initialized; experimental.");
         _modCatalog = new ModInformationCatalog(_hub, ModInformationSource.Snapshot);
+        _modSettings = new ModSettingsService(_hub, StoryHostAuthentication.Resolve);
         InitializeUpdates();
         try
         {
@@ -216,7 +218,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         {
             var assembly = _inspectedGameAssembly
                 ?? throw new NotSupportedException("No inspected game assembly; local catalog remains available.");
-            _modMenu = new ModMenuModule(assembly, _modCatalog!, DisableModMenu, _updatePresenter);
+            _modMenu = new ModMenuModule(assembly, _modCatalog!, _modSettings!, DisableModMenu, _updatePresenter);
             _hub.SetAvailable("mod-information-menu", "Bound to inspected native menu.");
         }
         catch (Exception error) { DisableModMenu(error); }

@@ -18,15 +18,32 @@ internal sealed class ModMenuView : IModMenuView
     private readonly Canvas _canvas;
     private readonly ModMenuBindings _bindings;
     private readonly ModInformationPresenter _presenter;
+    private readonly ModSettingsPresenter _settingPresenter;
     private readonly Action<Exception> _fault;
     private Action<string> _openUrl = Application.OpenURL;
     private readonly List<Button> _rows = new();
     private readonly List<Selectable> _navigation = new();
     private readonly List<Action> _removeListeners = new();
     private readonly List<GameObject> _ownedRoots = new();
-    private Button _entry = null!, _close = null!, _project = null!;
-    private RectTransform _panel = null!, _body = null!, _listContent = null!, _detailsContent = null!;
-    private ScrollRect _list = null!, _details = null!;
+    private Button _entry = null!, _close = null!, _project = null!, _settingsButton = null!;
+    private Button _settingBack = null!, _settingReset = null!;
+    private readonly List<GameObject> _settingRows = new();
+    private readonly List<Selectable> _settingControls = new();
+    private readonly List<Action> _settingSync = new();
+    private readonly Dictionary<int, RectTransform> _settingRowRects = new();
+    private RectTransform _settingHint = null!;
+    private TMP_Text _settingHintText = null!;
+    private int _hoveredSetting = -1;
+    private bool _syncingSettings;
+
+    private sealed class HoverRelay : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+    {
+        internal Action? Enter, Exit;
+        public void OnPointerEnter(PointerEventData eventData) => Enter?.Invoke();
+        public void OnPointerExit(PointerEventData eventData) => Exit?.Invoke();
+    }
+    private RectTransform _panel = null!, _body = null!, _listContent = null!, _detailsContent = null!, _settingListContent = null!;
+    private ScrollRect _list = null!, _details = null!, _settingList = null!;
     private TMP_Text _heading = null!, _summary = null!, _updateStatus = null!, _detailText = null!;
     private TMP_FontAsset _font = null!;
     private Sprite? _sprite;
@@ -40,7 +57,7 @@ internal sealed class ModMenuView : IModMenuView
     private int _first = -1, _visibleCount = -1;
     private bool _rowsDirty = true;
     private float _width = -1, _height = -1;
-    private bool _disposed;
+    private bool _disposed, _settingsMode;
     private readonly ModUpdatePresenter? _updates;
     private Button _checkUpdate = null!, _release = null!;
     private string _updateText = "";
@@ -48,13 +65,13 @@ internal sealed class ModMenuView : IModMenuView
     private float _nextStatusRefresh;
 
     private ModMenuView(MonoBehaviour menu, RectTransform viewport, Canvas canvas, ModMenuBindings bindings,
-        ModInformationPresenter presenter, Action<Exception> fault, ModUpdatePresenter? updates)
-    { _menu = menu; _viewport = viewport; _canvas = canvas; _bindings = bindings; _presenter = presenter; _fault = fault; _updates = updates; }
+        ModInformationPresenter presenter, ModSettingsService settings, Action<Exception> fault, ModUpdatePresenter? updates)
+    { _menu = menu; _viewport = viewport; _canvas = canvas; _bindings = bindings; _presenter = presenter; _settingPresenter = new ModSettingsPresenter(settings); _fault = fault; _updates = updates; }
 
     internal static ModMenuView Create(MonoBehaviour menu, RectTransform viewport, Canvas canvas, ModMenuBindings bindings,
-        ModInformationPresenter presenter, Action<Exception> fault, ModUpdatePresenter? updates = null)
+        ModInformationPresenter presenter, ModSettingsService settings, Action<Exception> fault, ModUpdatePresenter? updates = null)
     {
-        var view = new ModMenuView(menu, viewport, canvas, bindings, presenter, fault, updates);
+        var view = new ModMenuView(menu, viewport, canvas, bindings, presenter, settings, fault, updates);
         try { view.Build(); return view; }
         catch { view.Dispose(); throw; }
     }
@@ -105,8 +122,10 @@ internal sealed class ModMenuView : IModMenuView
         _detailText.textWrappingMode = TextWrappingModes.Normal;
         _detailText.overflowMode = TextOverflowModes.Overflow;
         Stretch(_detailText.rectTransform, 0, 0, 1, 1, 6, 0, -8, 0);
+        _settingsButton = Button(_body, "Mod settings", "Settings", OpenSettings);
+        Stretch((RectTransform)_settingsButton.transform, .46f, 0, .62f, 0, 8, 8, -4, 40);
         _project = Button(_body, "Project link", "Mod website", () => _presenter.OpenProject(_openUrl));
-        Stretch((RectTransform)_project.transform, .46f, 0, .70f, 0, 8, 8, -4, 40);
+        Stretch((RectTransform)_project.transform, .62f, 0, .78f, 0, 4, 8, -4, 40);
         var divider = Rect(_body, "Update divider");
         Stretch(divider, .46f, 0, 1, 0, 8, 74, -8, 75);
         divider.gameObject.AddComponent<Image>().color = new Color(.2f, .3f, .36f, 1);
@@ -118,9 +137,27 @@ internal sealed class ModMenuView : IModMenuView
         if (_updates != null)
         {
             _release = Button(_body, "Release link", "Download update", () => { if (_presenter.Selected != null) _updates.OpenRelease(_presenter.Selected, _openUrl); });
-            Stretch((RectTransform)_release.transform, 1, 0, 1, 0, -168, 24, -8, 56);
+            Stretch((RectTransform)_release.transform, .78f, 0, 1, 0, 4, 8, -8, 40);
             _checkUpdate = Button(_body, "Check updates", "Check for updates", () => { _updates.CheckAll(_presenter.Rows); RenderDetails(false); });
         }
+        _settingList = Scroll(_body, "Setting rows", out _settingListContent);
+        Stretch((RectTransform)_settingList.transform, .46f, 0, 1, 1, 8, 52, -8, -70);
+        _settingHint = Rect(_panel, "Setting hint");
+        _settingHint.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+        var hintBackground = _settingHint.gameObject.AddComponent<Image>();
+        hintBackground.color = new Color(.05f, .075f, .1f, .98f); hintBackground.raycastTarget = false;
+        _settingHintText = Text(_settingHint, "Hint text", "");
+        _settingHintText.fontSize = 13;
+        _settingHintText.textWrappingMode = TextWrappingModes.Normal;
+        _settingHintText.overflowMode = TextOverflowModes.Overflow;
+        _settingHintText.alignment = TextAlignmentOptions.TopLeft;
+        Stretch(_settingHintText.rectTransform, 0, 0, 1, 1, 8, 6, -8, -6);
+        _settingHint.gameObject.SetActive(false);
+        _settingBack = Button(_body, "Settings back", "Back", ExitSettings);
+        _settingReset = Button(_body, "Reset settings", "Reset all", () => { _settingPresenter.ResetAll(); SyncSettingRows(); });
+        Stretch((RectTransform)_settingBack.transform, .46f, 0, .62f, 0, 8, 8, -4, 40);
+        Stretch((RectTransform)_settingReset.transform, .84f, 0, 1, 0, 4, 8, -8, 40);
+        SetSettingsControls(false);
     }
 
     private void Guard(Action action)
@@ -170,7 +207,7 @@ internal sealed class ModMenuView : IModMenuView
         }
         RefreshRows();
         UpdateScrollbars();
-        if (_updates != null && _presenter.Selected != null &&
+        if (!_settingsMode && _updates != null && _presenter.Selected != null &&
             _updates.Text(_presenter.Selected, DateTimeOffset.UtcNow) != _updateText) RenderDetails(false);
         var directionKey = Keyboard.current?.downArrowKey.wasPressedThisFrame == true ? 1 :
             Keyboard.current?.upArrowKey.wasPressedThisFrame == true ? -1 : 0;
@@ -183,10 +220,15 @@ internal sealed class ModMenuView : IModMenuView
                 MoveSelection(directionKey);
             }
         }
-        if (Keyboard.current?.escapeKey.wasPressedThisFrame == true) { Close(true); return; }
+        if (Keyboard.current?.escapeKey.wasPressedThisFrame == true)
+        {
+            if (_settingsMode) ExitSettings(); else Close(true);
+            return;
+        }
         // All owned selectables use an explicit closed navigation ring; never edit native navigation.
         // Repair foreign/cleared selection without disabling the EventSystem or its input module.
         if (_events != null && !IsPanelFocus(_events.currentSelectedGameObject)) Select(_close.gameObject);
+        if (_settingsMode && _hoveredSetting >= 0) RefreshSettingHint();
         if (Keyboard.current?.tabKey.wasPressedThisFrame == true)
         {
             var selected = _events == null ? null : _events.currentSelectedGameObject;
@@ -307,10 +349,229 @@ internal sealed class ModMenuView : IModMenuView
         _ => new Color(.7f, .75f, .8f, 1)
     };
 
+    private void OpenSettings()
+    {
+        var providerId = _presenter.Selected?.PluginId;
+        if (providerId == null || !_settingPresenter.Open(providerId)) return;
+        _settingsMode = true;
+        RenderSettings();
+        BuildSettingRows();
+        RebuildNavigation();
+        if (_settingControls.Count > 0) Select(_settingControls[0].gameObject);
+    }
+
+    private void BuildSettingRows()
+    {
+        ClearSettingRows();
+        var y = 0;
+        string? group = null;
+        for (var index = 0; index < _settingPresenter.Rows.Count; ++index)
+        {
+            var setting = index;
+            var definitionGroup = _settingPresenter.Rows[index].Definition.Group;
+            if (definitionGroup != group)
+            {
+                group = definitionGroup;
+                var header = Rect(_settingListContent, "Setting group " + group);
+                Stretch(header, 0, 1, 1, 1, 0, -y - SettingHeaderHeight, 0, -y);
+                var caption = Text(header, "Group name", group);
+                caption.fontSize = 15;
+                caption.color = new Color(.75f, .87f, 1, 1);
+                Stretch(caption.rectTransform, 0, 0, 1, 1, 10, 2, -8, 0);
+                var underline = Rect(header, "Underline");
+                Stretch(underline, 0, 0, .6f, 0, 10, 2, 0, 3);
+                var line = underline.gameObject.AddComponent<Image>();
+                line.color = new Color(.35f, .5f, .62f, 1); line.raycastTarget = false;
+                _settingRows.Add(header.gameObject);
+                y += SettingHeaderHeight;
+            }
+            var row = Rect(_settingListContent, "Setting row " + setting);
+            Stretch(row, 0, 1, 1, 1, 0, -y - SettingRowHeight, 0, -y);
+            var hoverSurface = row.gameObject.AddComponent<Image>();
+            hoverSurface.color = Color.clear; hoverSurface.raycastTarget = true;
+            var relay = row.gameObject.AddComponent<HoverRelay>();
+            relay.Enter = () => { _hoveredSetting = setting; if (_settingPresenter.Select(setting)) RefreshSettingHint(); };
+            relay.Exit = () => { if (_hoveredSetting == setting) { _hoveredSetting = -1; RefreshSettingHint(); } };
+            var name = Text(row, "Setting name", _settingPresenter.RowName(setting));
+            name.fontSize = 14;
+            Stretch(name.rectTransform, 0, 0, .52f, 1, 14, 0, -4, 0);
+            switch (_settingPresenter.Rows[setting].Definition)
+            {
+                case BoolModSetting: BuildToggleControl(row, setting); break;
+                case IntModSetting or FloatModSetting: BuildSliderControl(row, setting); break;
+                case ChoiceModSetting: BuildChoiceControl(row, setting); break;
+            }
+            _settingRows.Add(row.gameObject);
+            _settingRowRects[setting] = row;
+            y += SettingRowHeight;
+        }
+        _settingListContent.sizeDelta = new Vector2(0, y);
+        _settingList.StopMovement();
+        _settingListContent.anchoredPosition = Vector2.zero;
+        SyncSettingRows();
+    }
+
+    private void BuildToggleControl(RectTransform row, int setting)
+    {
+        var boxRect = Rect(row, "Toggle");
+        Stretch(boxRect, .54f, .5f, .54f, .5f, 0, -10, 20, 10);
+        var box = boxRect.gameObject.AddComponent<Image>();
+        box.sprite = _sprite; box.type = _imageType; box.pixelsPerUnitMultiplier = _pixelsPerUnitMultiplier;
+        box.fillCenter = _fillCenter; box.color = _buttonColor;
+        var markRect = Rect(boxRect, "Checkmark");
+        Stretch(markRect, 0, 0, 1, 1, 5, 5, -5, -5);
+        var mark = markRect.gameObject.AddComponent<Image>();
+        mark.color = new Color(.4f, .85f, 1, 1); mark.raycastTarget = false;
+        var toggle = boxRect.gameObject.AddComponent<Toggle>();
+        toggle.targetGraphic = box; toggle.graphic = mark; toggle.colors = _colors;
+        toggle.navigation = new Navigation { mode = Navigation.Mode.None };
+        UnityEngine.Events.UnityAction<bool> changed = value =>
+            { if (!_syncingSettings) Guard(() => { _settingPresenter.SetBool(setting, value); SyncSettingRows(); }); };
+        toggle.onValueChanged.AddListener(changed);
+        _removeListeners.Add(() => { if (toggle != null) toggle.onValueChanged.RemoveListener(changed); });
+        _settingSync.Add(() => { if (_settingPresenter.TryBool(setting, out var value)) toggle.isOn = value; });
+        RegisterSettingControl(toggle, setting);
+    }
+
+    private void BuildSliderControl(RectTransform row, int setting)
+    {
+        var value = Text(row, "Setting value", "");
+        value.fontSize = 14;
+        value.color = new Color(.75f, .85f, .95f, 1);
+        Stretch(value.rectTransform, .88f, 0, 1, 1, 4, 0, -8, 0);
+        var sliderRect = Rect(row, "Slider");
+        Stretch(sliderRect, .54f, 0, .87f, 1, 0, 7, 0, -7);
+        var track = Rect(sliderRect, "Track");
+        Stretch(track, 0, .5f, 1, .5f, 0, -3, 0, 3);
+        track.gameObject.AddComponent<Image>().color = new Color(.12f, .15f, .19f, 1);
+        var handleArea = Rect(sliderRect, "Handle area");
+        Stretch(handleArea, 0, 0, 1, 1, 6, 0, -6, 0);
+        var handleRect = Rect(handleArea, "Handle");
+        handleRect.anchorMin = new Vector2(0, 0); handleRect.anchorMax = new Vector2(0, 1);
+        handleRect.sizeDelta = new Vector2(12, 0);
+        var handle = handleRect.gameObject.AddComponent<Image>();
+        handle.color = new Color(.55f, .6f, .68f, 1);
+        var slider = sliderRect.gameObject.AddComponent<Slider>();
+        slider.handleRect = handleRect; slider.targetGraphic = handle; slider.colors = _colors;
+        slider.direction = Slider.Direction.LeftToRight;
+        slider.navigation = new Navigation { mode = Navigation.Mode.None };
+        if (_settingPresenter.TryNumber(setting, out _, out var minimum, out var maximum, out _, out var wholeNumbers))
+        { slider.minValue = minimum; slider.maxValue = maximum; slider.wholeNumbers = wholeNumbers; }
+        UnityEngine.Events.UnityAction<float> changed = raw =>
+            { if (!_syncingSettings) Guard(() => { _settingPresenter.SetNumber(setting, raw); SyncSettingRows(); }); };
+        slider.onValueChanged.AddListener(changed);
+        _removeListeners.Add(() => { if (slider != null) slider.onValueChanged.RemoveListener(changed); });
+        _settingSync.Add(() =>
+        {
+            if (_settingPresenter.TryNumber(setting, out var current, out _, out _, out _, out _)) slider.value = current;
+            value.text = _settingPresenter.RowValue(setting);
+        });
+        RegisterSettingControl(slider, setting);
+    }
+
+    private void BuildChoiceControl(RectTransform row, int setting)
+    {
+        var previous = Button(row, "Previous choice", "<", () => { _settingPresenter.CycleChoice(setting, -1); SyncSettingRows(); });
+        Stretch((RectTransform)previous.transform, .54f, .5f, .54f, .5f, 0, -11, 24, 11);
+        var value = Text(row, "Setting value", "");
+        value.fontSize = 14;
+        value.alignment = TextAlignmentOptions.Midline;
+        value.color = new Color(.75f, .85f, .95f, 1);
+        Stretch(value.rectTransform, .54f, 0, 1, 1, 26, 0, -34, 0);
+        var next = Button(row, "Next choice", ">", () => { _settingPresenter.CycleChoice(setting, 1); SyncSettingRows(); });
+        Stretch((RectTransform)next.transform, 1, .5f, 1, .5f, -32, -11, -8, 11);
+        _settingSync.Add(() => value.text = _settingPresenter.RowValue(setting));
+        RegisterSettingControl(previous, setting);
+        RegisterSettingControl(next, setting);
+    }
+
+    private void RegisterSettingControl(Selectable control, int setting)
+    {
+        _settingControls.Add(control);
+    }
+
+    private void SyncSettingRows()
+    {
+        _syncingSettings = true;
+        try { foreach (var sync in _settingSync) sync(); }
+        finally { _syncingSettings = false; }
+        RefreshSettingHint();
+    }
+
+    private void RefreshSettingHint()
+    {
+        if (!_settingsMode || _settingHint == null) return;
+        var index = _hoveredSetting;
+        if (index < 0 || !_settingRowRects.TryGetValue(index, out var row) || row == null)
+        { _settingHint.gameObject.SetActive(false); return; }
+        var details = _settingPresenter.Select(index) ? _settingPresenter.Details() : "";
+        if (details.Length == 0) { _settingHint.gameObject.SetActive(false); return; }
+        _settingHint.gameObject.SetActive(true);
+        _settingHint.SetAsLastSibling();
+        _settingHintText.text = details;
+        var width = Mathf.Min(340, Mathf.Max(220, _panel.rect.width * .22f));
+        var height = _settingHintText.GetPreferredValues(_settingHintText.text, width - 16, float.PositiveInfinity).y + 12;
+        var anchor = (Vector3)RectTransformUtility.CalculateRelativeRectTransformBounds(_panel, row).center;
+        var top = Mathf.Min(_panel.rect.yMax - 4, anchor.y + height / 2);
+        var bottom = Mathf.Max(_panel.rect.yMin + 4, top - height);
+        var listLeft = RectTransformUtility.CalculateRelativeRectTransformBounds(_panel, (RectTransform)_settingList.transform).min.x;
+        _settingHint.anchorMin = _settingHint.anchorMax = new Vector2(.5f, .5f);
+        _settingHint.offsetMin = new Vector2(listLeft - width - 6, bottom);
+        _settingHint.offsetMax = new Vector2(listLeft - 6, bottom + height);
+    }
+
+    private void ClearSettingRows()
+    {
+        foreach (var row in _settingRows) if (row != null) Object.Destroy(row);
+        _settingRows.Clear(); _settingControls.Clear(); _settingSync.Clear(); _settingRowRects.Clear();
+        _hoveredSetting = -1;
+        if (_settingHint != null) _settingHint.gameObject.SetActive(false);
+    }
+
+    private void ExitSettings()
+    {
+        if (!_settingsMode) return;
+        _settingsMode = false;
+        _settingPresenter.Close();
+        RenderDetails();
+    }
+
+    private void RenderSettings()
+    {
+        if (!_settingsMode) return;
+        _rowsDirty = true;
+        _updateStatus.gameObject.SetActive(false);
+        _body.Find("Update divider").gameObject.SetActive(false);
+        _project.gameObject.SetActive(false);
+        _settingsButton.gameObject.SetActive(false);
+        if (_updates != null) { _checkUpdate.gameObject.SetActive(false); _release.gameObject.SetActive(false); }
+        SetSettingsControls(true);
+        SyncSettingRows();
+        UpdateScrollbars(); RebuildNavigation();
+    }
+
+    private const int SettingRowHeight = 30;
+    private const int SettingHeaderHeight = 26;
+
+    private void SetSettingsControls(bool visible)
+    {
+        foreach (var button in new[] { _settingBack, _settingReset })
+            if (button != null) button.gameObject.SetActive(visible);
+        if (_settingList != null) _settingList.gameObject.SetActive(visible);
+        if (_details != null) _details.gameObject.SetActive(!visible);
+        if (!visible) ClearSettingRows();
+    }
+
     private void RenderDetails(bool resetScroll = true)
     {
+        _settingsMode = false;
+        _settingPresenter.Close();
+        SetSettingsControls(false);
         _rowsDirty = true;
         _detailText.text = _presenter.Details();
+        _updateStatus.gameObject.SetActive(true);
+        _body.Find("Update divider").gameObject.SetActive(true);
+        if (_updates != null) _checkUpdate.gameObject.SetActive(true);
         if (_updates != null)
         {
             _checkUpdate.interactable = System.Linq.Enumerable.Any(_presenter.Rows, mod => _updates.CanCheck(mod));
@@ -323,6 +584,7 @@ internal sealed class ModMenuView : IModMenuView
             _updateStatus.color = StatusColor(_presenter.Selected);
         }
         _project.gameObject.SetActive(_presenter.TryProjectDestination(out _));
+        _settingsButton.gameObject.SetActive(_settingPresenter.HasSettings(_presenter.SelectedId));
         if (_presenter.Selected == null) _updateStatus.text = "";
         if (resetScroll) { _details.StopMovement(); _detailsContent.anchoredPosition = Vector2.zero; }
         ResizeDetails(); UpdateScrollbars(); RebuildNavigation();
@@ -330,15 +592,17 @@ internal sealed class ModMenuView : IModMenuView
 
     private void ResizeDetails()
     {
+        if (_settingsMode) return;
         _updateStatus.fontSize = _body.rect.width < 800 ? 12 : 14;
         var updateWidth = Mathf.Max(1, _body.rect.width * .54f - 24);
         var updateHeight = Mathf.Max(44, _updateStatus.GetPreferredValues(_updateStatus.text, updateWidth, float.PositiveInfinity).y + 8);
         Stretch(_updateStatus.rectTransform, .46f, 0, 1, 0, 16, 52, -8, updateHeight + 52);
         Stretch((RectTransform)_body.Find("Update divider"), .46f, 0, 1, 0, 8, updateHeight + 60, -8, updateHeight + 61);
-        Stretch((RectTransform)_project.transform, .46f, 0, .70f, 0, 8, 8, -4, 40);
+        Stretch((RectTransform)_settingsButton.transform, .46f, 0, .62f, 0, 8, 8, -4, 40);
+        Stretch((RectTransform)_project.transform, .62f, 0, .78f, 0, 4, 8, -4, 40);
         Stretch((RectTransform)_details.transform, .46f, 0, 1, 1, 8, updateHeight + 69, -8, -70);
         if (_updates != null)
-            Stretch((RectTransform)_release.transform, .70f, 0, 1, 0, 4, 8, -8, 40);
+            Stretch((RectTransform)_release.transform, .78f, 0, 1, 0, 4, 8, -8, 40);
         Canvas.ForceUpdateCanvases();
         var width = Mathf.Max(1, _details.viewport.rect.width - 14);
         var detailHeight = _detailText.GetPreferredValues(_detailText.text, width, float.PositiveInfinity).y + 16;
@@ -349,8 +613,10 @@ internal sealed class ModMenuView : IModMenuView
     private void UpdateScrollbars()
     {
         var changed = false;
-        foreach (var scroll in new[] { _list, _details })
+        foreach (var scroll in new[] { _list, _details, _settingList })
         {
+            if (scroll == _settingList && !_settingsMode) continue;
+            if (scroll == _details && _settingsMode) continue;
             var visible = scroll.content.rect.height > scroll.viewport.rect.height + 1;
             if (scroll.verticalScrollbar.gameObject.activeSelf == visible) continue;
             scroll.verticalScrollbar.gameObject.SetActive(visible);
@@ -363,17 +629,28 @@ internal sealed class ModMenuView : IModMenuView
     {
         _navigation.Clear(); _navigation.Add(_close);
         foreach (var row in _rows) if (row.gameObject.activeSelf) _navigation.Add(row);
-        if (_project.gameObject.activeSelf && _project.interactable) _navigation.Add(_project);
-        if (_updates != null)
+        if (_settingsMode)
         {
-            if (_checkUpdate.interactable) _navigation.Add(_checkUpdate);
+            foreach (var control in _settingControls) if (control.gameObject.activeInHierarchy) _navigation.Add(control);
+            foreach (var button in new[] { _settingBack, _settingReset })
+                if (button.gameObject.activeSelf && button.interactable) _navigation.Add(button);
+        }
+        else
+        {
+            if (_settingsButton.gameObject.activeSelf && _settingsButton.interactable) _navigation.Add(_settingsButton);
+            if (_project.gameObject.activeSelf && _project.interactable) _navigation.Add(_project);
+        }
+        if (!_settingsMode && _updates != null)
+        {
+            if (_checkUpdate.gameObject.activeSelf && _checkUpdate.interactable) _navigation.Add(_checkUpdate);
             if (_release.gameObject.activeSelf && _release.interactable) _navigation.Add(_release);
         }
         if (_list.verticalScrollbar.gameObject.activeSelf) _navigation.Add(_list.verticalScrollbar);
+        if (_settingsMode && _settingList.verticalScrollbar.gameObject.activeSelf) _navigation.Add(_settingList.verticalScrollbar);
         if (_details.verticalScrollbar.gameObject.activeSelf) _navigation.Add(_details.verticalScrollbar);
         for (var i = 0; i < _navigation.Count; ++i)
         {
-            var links = ModMenuNavigation.Neighbors(i, _navigation.Count, _navigation[i] is Scrollbar);
+            var links = ModMenuNavigation.Neighbors(i, _navigation.Count, _navigation[i] is Scrollbar or Slider);
             _navigation[i].navigation = new Navigation { mode = Navigation.Mode.Explicit,
                 selectOnUp = !_rows.Exists(row => row == _navigation[i]) && links.Up.HasValue ? _navigation[links.Up.Value] : null,
                 selectOnDown = !_rows.Exists(row => row == _navigation[i]) && links.Down.HasValue ? _navigation[links.Down.Value] : null,
@@ -392,6 +669,7 @@ internal sealed class ModMenuView : IModMenuView
         var events = _events;
         var ownedFocus = events != null && events == EventSystem.current && IsPanelFocus(events.currentSelectedGameObject);
         _panel.gameObject.SetActive(false);
+        _settingsMode = false; _settingPresenter.Close();
         if (_entry != null) _entry.interactable = true;
         if (ownedFocus) events!.SetSelectedGameObject(null);
         if (restore && Valid && !_bindings.ModalOpen && events != null && events == EventSystem.current &&

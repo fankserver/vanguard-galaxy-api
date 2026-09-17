@@ -22,6 +22,13 @@ An already running game or a leftover staging backup causes refusal, not a kill
 or overwrite. The controller launches a normal player with the Steam application
 environment; it does not assume Unity batch/headless flags work for this game.
 
+Manual launches outside the controller must also carry the Steam application
+environment (`SteamAppId`/`SteamGameId`, or start through Steam). Launching
+`VanguardGalaxy.exe` bare makes Steam replace the process, and in that
+replacement process managed `Update`/`LateUpdate` and Harmony callbacks never
+run after chainloader `Awake` even though plugins log a clean load — mods then
+appear silently inert (for example, no Mods menu entry ever attaches).
+
 Use the [Makefile](../../Makefile) for configuration and command definitions:
 `GAME_DIR`, `CONFIGURATION`, `E2E_PYTHON`, `E2E_SAVE_DIR`, `E2E_TIMEOUT`,
 `E2E_BUILD`, `E2E_RUNTIME`, and `E2E_CASE`. The default save path is the current
