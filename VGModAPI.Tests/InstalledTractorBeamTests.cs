@@ -50,6 +50,7 @@ public sealed class InstalledTractorBeamTests
         Assert.NotNull(Assert.Single(equipment.Methods, m => m.Name == "SetMainSubStats" && !m.HasBody));
         Assert.Equal("System.String", equipment.Methods.Single(m => m.Name == "GetName").ReturnType.FullName);
         Assert.Equal("System.Int32", equipment.Properties.Single(p => p.Name == "qualityLevel").PropertyType.FullName);
+        Assert.True(Assert.Single(module.GetType("Behaviour.Equipment.Turret.AbstractTurret").Methods, m => m.Name == "SetMainSubStats").HasBody); // abstract intermediates hold real builders
         foreach (var name in new[] { "TractorModule", "MiningModule", "SalvageModule", "ShieldGeneratorModule", "DroneBayModule" })
         {
             var type = module.GetType("Behaviour.Equipment.Module." + name);

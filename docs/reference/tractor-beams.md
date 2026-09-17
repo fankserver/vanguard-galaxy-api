@@ -67,7 +67,7 @@ var masteryTip = api.Tooltips.RegisterSkillTree("my.mod", (tree, tooltip) =>
 `ShipModule` covers every native `Behaviour.Equipment.Module` family through the
 game-vocabulary `ShipModuleKind` (`Tractor`, `Mining`, `Salvage`, `ShieldGenerator`,
 `Reactor`, `DroneBay`, `TorpedoBay`, `Armor`, `CargoScoop`, `EngineThrusters`,
-`HangarBay`, `Hull`, `Painter`, `Repair`, `Scanner`, `Other`). `StatLines` shows the
+`HangarBay`, `Hull`, `Painter`, `Repair`, `Scanner`, `Turret`, `Other`). `StatLines` shows the
 vanilla stat lines currently displayed and `DisplayName`/`QualityLevel` identify the
 module; the typed `Tractor` snapshot is non-null only for tractor modules. Item
 tooltips receive `ItemInfo` (`Identifier`, `DisplayName`, `Description`, `Count`,

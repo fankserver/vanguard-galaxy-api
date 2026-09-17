@@ -68,11 +68,13 @@ internal sealed class TooltipRuntime
         // declaring type, so patching every declaring override covers the whole equipment family.
         var builders = new List<MethodInfo>();
         var seen = new HashSet<Type>();
+        // Abstract intermediate classes may hold the real implementation (AbstractTurret), so
+        // patch every declaring override with a body; virtual dispatch reaches it from the leaves.
         foreach (var type in Subclasses(a, equipment))
         {
-            if (type.IsAbstract) continue;
             var overrideMethod = type.GetMethod("SetMainSubStats", Any | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null);
-            if (overrideMethod == null || overrideMethod.DeclaringType != type || overrideMethod.ReturnType != typeof(void) || !seen.Add(type)) continue;
+            if (overrideMethod == null || overrideMethod.DeclaringType != type || overrideMethod.IsAbstract
+                || overrideMethod.ReturnType != typeof(void) || !seen.Add(type)) continue;
             builders.Add(overrideMethod);
             _kinds[type] = MapKind(type.Name);
         }
@@ -91,18 +93,19 @@ internal sealed class TooltipRuntime
         if (baseFill.ReturnType != typeof(void)) throw new InvalidOperationException("Tooltip content fill shape changed.");
         fills.Add(baseFill);
         foreach (var type in Subclasses(a, tooltip))
-            if (!type.IsAbstract)
-            {
-                var fill = type.GetMethod("SetContent", Any | BindingFlags.DeclaredOnly, null, new[] { tooltipSource }, null);
-                if (fill != null && fill.DeclaringType == type && fill.ReturnType == typeof(void)) fills.Add(fill);
-            }
+        {
+            var fill = type.GetMethod("SetContent", Any | BindingFlags.DeclaredOnly, null, new[] { tooltipSource }, null);
+            if (fill != null && fill.DeclaringType == type && !fill.IsAbstract && fill.ReturnType == typeof(void)) fills.Add(fill);
+        }
         ContentFills = fills;
     }
 
     private static ShipModuleKind MapKind(string typeName)
     {
         var stem = typeName.EndsWith("Module", StringComparison.Ordinal) ? typeName[..^"Module".Length] : typeName;
-        return Enum.TryParse<ShipModuleKind>(stem, out var kind) ? kind : ShipModuleKind.Other;
+        if (Enum.TryParse<ShipModuleKind>(stem, out var kind)) return kind;
+        if (typeName.EndsWith("Turret", StringComparison.Ordinal)) return ShipModuleKind.Turret;
+        return ShipModuleKind.Other;
     }
 
     private static IEnumerable<Type> Subclasses(Assembly a, Type baseType)

@@ -129,27 +129,44 @@ internal static class TractorCase
             // Generalized module family: an API-owned registration must reach a non-tractor
             // equipment module's own stat builder with vanilla StatLines as context.
             var equipmentType = a.GetType("Behaviour.Equipment.AbstractEquipment", true)!;
-            var otherModule = Resources.FindObjectsOfTypeAll(equipmentType).OfType<Component>()
-                .FirstOrDefault(c => c.GetType() != moduleType && equipmentType.GetMethod("IsPlayer", Any)!.Invoke(c, new object[] { true }) is true
-                    && c.GetType().GetMethod("SetMainSubStats", Any, null, Type.EmptyTypes, null) != null);
-            Require(otherModule != null, "no non-tractor player equipment module for the family check");
-            var otherStats = Field(otherModule!.GetType(), "mainSubStats");
-            var oldOtherStats = otherStats.GetValue(otherModule);
-            string otherName = (string)Get(otherModule, "name")!;
+            var candidatesForFamily = Resources.FindObjectsOfTypeAll(equipmentType).OfType<Component>()
+                .Where(c => c.GetType() != moduleType && equipmentType.GetMethod("IsPlayer", Any)!.Invoke(c, new object[] { true }) is true
+                    && c.GetType().GetMethod("SetMainSubStats", Any, null, Type.EmptyTypes, null) != null).ToArray();
+            // Probe first: pick a module whose native builder really renders vanilla lines, so the
+            // registration under test always has content to append to.
+            Component? otherModule = null; FieldInfo? otherStats = null; int vanillaLineCount = 0;
+            foreach (var candidate in candidatesForFamily)
+            {
+                var probeStats = Field(candidate.GetType(), "mainSubStats");
+                var keep = probeStats.GetValue(candidate);
+                try
+                {
+                    probeStats.SetValue(candidate, Activator.CreateInstance(probeStats.FieldType));
+                    candidate.GetType().GetMethod("SetMainSubStats", Any)!.Invoke(candidate, null);
+                    var count = ((IEnumerable)Get(probeStats.GetValue(candidate)!, "subStatsList")!).Cast<object>().Count();
+                    if (count > 0) { otherModule = candidate; otherStats = probeStats; vanillaLineCount = count; break; }
+                }
+                finally { probeStats.SetValue(candidate, keep); }
+            }
+            Require(otherModule != null && otherStats != null, "no player equipment module renders vanilla stat lines for the family check");
+            ShipModule? familySeen = null;
             using (var lease = ModApi.Services.Tooltips.RegisterShipModule("vgmodapi.e2e", (m, tooltip) =>
             {
-                Require(m.Kind != ShipModuleKind.Tractor && m.Tractor == null, "non-tractor module received a tractor snapshot");
-                Require(m.StatLines.Count > 0, "module registration saw no vanilla stat lines");
-                Require(m.DisplayName.Length > 0 && m.Kind.ToString().Length > 0, "module snapshot missing identity");
+                familySeen = m;
                 tooltip.AddLine("e2e-family " + m.Kind);
             }))
             {
-                otherStats.SetValue(otherModule, Activator.CreateInstance(otherStats.FieldType));
-                otherModule.GetType().GetMethod("SetMainSubStats", Any)!.Invoke(otherModule, null);
+                otherStats!.SetValue(otherModule!, Activator.CreateInstance(otherStats.FieldType));
+                otherModule!.GetType().GetMethod("SetMainSubStats", Any)!.Invoke(otherModule, null);
                 Require(((IEnumerable)Get(otherStats.GetValue(otherModule)!, "subStatsList")!).Cast<object>()
-                    .Any(s => ((string)Get(s, "mainSubStatName")!).Contains("e2e-family")), "family registration missed a non-tractor module");
+                    .Any(s => ((string)Get(s, "mainSubStatName")!).Contains("e2e-family")),
+                    "family registration missed a non-tractor module (candidate=" + otherModule!.GetType().Name + " saw=" + (familySeen?.Kind.ToString() ?? "nothing") + " vanilla=" + vanillaLineCount + ")");
             }
-            otherStats.SetValue(otherModule, oldOtherStats);
+            Require(familySeen != null && familySeen.Kind != ShipModuleKind.Tractor && familySeen.Tractor == null,
+                "non-tractor module received a tractor snapshot or no payload");
+            Require(familySeen!.StatLines.Count > 0 && familySeen.DisplayName.Length > 0 && familySeen.QualityLevel >= 0,
+                "module snapshot missing vanilla stat lines or identity (vanilla built " + vanillaLineCount + " lines)");
+            otherStats.SetValue(otherModule, Activator.CreateInstance(otherStats.FieldType));
 
             // Item family: fill a real tooltip from an item source without desktop interaction.
             var tooltipType = a.GetType("Behaviour.UI.UITooltip", true)!;
@@ -160,11 +177,11 @@ internal static class TractorCase
             var sourceGo = new GameObject("tractor-e2e-item"); sourceGo.SetActive(false); temporary.Add(sourceGo);
             var source = sourceGo.AddComponent(sourceType);
             var expectedId = (string)Get(ordinary, "identifier")!;
+            ItemInfo? itemSeen = null;
             using (var lease = ModApi.Services.Tooltips.RegisterItem("vgmodapi.e2e", (item, tip) =>
             {
-                Require(item.Identifier == expectedId && item.DisplayName.Length > 0, "item snapshot identity mismatch");
-                Require(item.Count == 7, "item snapshot lost the shown stack count");
-                tip.AddLine("e2e-item " + item.DisplayName, TooltipTextStyle.Bonus);
+                itemSeen = item;
+                if (item.Identifier == expectedId) tip.AddLine("e2e-item " + item.DisplayName, TooltipTextStyle.Bonus);
             }))
             {
                 var context = Enum.Parse(a.GetType("Behaviour.UI.Tooltip.ItemTooltipContext", true)!, "InInventory");
@@ -173,6 +190,8 @@ internal static class TractorCase
                 tooltipType.GetMethod("SetContent", Any)!.Invoke(tooltip, new object[] { source });
                 string[] Lines() => ((IEnumerable)Get(tooltip, "_contentList")!).Cast<object>().Select(c => c.GetType().GetProperty("Text", Any)?.GetValue(c)).Where(t => t != null).Select(t => (string)t!.GetType().GetProperty("text", Any)!.GetValue(t)!).ToArray();
                 Require(Lines().Any(t => t.Contains("e2e-item") && t.Contains("<color=")), "item tooltip contribution missing or unstyled");
+                Require(itemSeen != null && itemSeen.Identifier == expectedId && itemSeen.DisplayName.Length > 0 && itemSeen.Count == 7,
+                    "item snapshot identity/stack mismatch (saw " + (itemSeen == null ? "nothing" : itemSeen.Identifier + " x" + itemSeen.Count) + ")");
             }
 
             // Build a native mastery tooltip from a real UI prefab, without desktop interaction.

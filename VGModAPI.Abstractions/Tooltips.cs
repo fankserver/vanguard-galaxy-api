@@ -10,7 +10,7 @@ public enum TooltipTextStyle { Normal, Bonus, Details }
 public enum ShipModuleKind
 {
     Tractor, Mining, Salvage, ShieldGenerator, Reactor, ReactorLight, DroneBay, TorpedoBay,
-    Armor, CargoScoop, EngineThrusters, HangarBay, Hull, Painter, Repair, Scanner, Other
+    Armor, CargoScoop, EngineThrusters, HangarBay, Hull, Painter, Repair, Scanner, Turret, Other
 }
 
 /// <summary>A stat line the native module just showed, captured before extensions append.</summary>
