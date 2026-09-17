@@ -86,7 +86,8 @@ public sealed class TooltipLine
 public interface ITooltipService : IServiceStatus
 {
     /// <summary>Append lines to any ship equipment module's stat list, for every native module family.
-    /// Called while the module builds its stats; filter by Kind for your family. Changes do not
+    /// Called while the module builds its stats; filter by Kind for your family. The native stat
+    /// list renders plain label text only, so TooltipTextStyle is ignored here. Changes do not
     /// retroactively rebuild existing stats; native caching is preserved.</summary>
     IDisposable RegisterShipModule(string pluginId, Action<ShipModule, Tooltip> describe);
     /// <summary>Append lines after any inventory item's native tooltip body, using the item the

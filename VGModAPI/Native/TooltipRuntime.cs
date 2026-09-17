@@ -67,14 +67,13 @@ internal sealed class TooltipRuntime
         // One postfix per concrete stat builder; the native dispatch resolves to the nearest
         // declaring type, so patching every declaring override covers the whole equipment family.
         var builders = new List<MethodInfo>();
-        var seen = new HashSet<Type>();
         // Abstract intermediate classes may hold the real implementation (AbstractTurret), so
         // patch every declaring override with a body; virtual dispatch reaches it from the leaves.
         foreach (var type in Subclasses(a, equipment))
         {
             var overrideMethod = type.GetMethod("SetMainSubStats", Any | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null);
             if (overrideMethod == null || overrideMethod.DeclaringType != type || overrideMethod.IsAbstract
-                || overrideMethod.ReturnType != typeof(void) || !seen.Add(type)) continue;
+                || overrideMethod.ReturnType != typeof(void)) continue;
             builders.Add(overrideMethod);
             _kinds[type] = MapKind(type.Name);
         }
@@ -131,6 +130,15 @@ internal sealed class TooltipRuntime
     }
 
     private bool MainThread => Thread.CurrentThread.ManagedThreadId == _thread;
+    private readonly Dictionary<object, int> _dispatched = new();
+    // A native override that chains to its base would dispatch the same render twice: once per
+    // key. Stats objects and tooltip objects are claimed per frame; fresh instances re-dispatch.
+    private bool Claim(object instance)
+    {
+        var frame = Time.frameCount;
+        if (_dispatched.TryGetValue(instance, out var seen) && seen == frame) return false;
+        _dispatched[instance] = frame; return true;
+    }
 
     internal void AddModuleDescription(object module)
     {
@@ -139,7 +147,7 @@ internal sealed class TooltipRuntime
         {
             var type = module.GetType();
             if (!_kinds.TryGetValue(type, out var kind)) kind = MapKind(type.Name);
-            var stats = _stats.GetValue(module); if (stats == null) return;
+            var stats = _stats.GetValue(module); if (stats == null || !Claim(stats)) return;
             var lines = new List<ModuleStatLine>();
             if (_subStats.GetValue(stats) is IList current)
                 foreach (var stat in current)
@@ -159,6 +167,7 @@ internal sealed class TooltipRuntime
         if (!MainThread || !_tooltips.Availability.IsAvailable) return;
         try
         {
+            if (!Claim(tooltipObject)) return;
             if (_source.GetValue(tooltipObject) is not Component source || !_itemSourceType.IsInstanceOfType(source)) return;
             if (_sourceItem.GetValue(source) is not object item) return;
             var values = new ItemInfo(

@@ -159,8 +159,8 @@ internal static class TractorCase
                 otherStats!.SetValue(otherModule!, Activator.CreateInstance(otherStats.FieldType));
                 otherModule!.GetType().GetMethod("SetMainSubStats", Any)!.Invoke(otherModule, null);
                 Require(((IEnumerable)Get(otherStats.GetValue(otherModule)!, "subStatsList")!).Cast<object>()
-                    .Any(s => ((string)Get(s, "mainSubStatName")!).Contains("e2e-family")),
-                    "family registration missed a non-tractor module (candidate=" + otherModule!.GetType().Name + " saw=" + (familySeen?.Kind.ToString() ?? "nothing") + " vanilla=" + vanillaLineCount + ")");
+                    .Count(s => ((string)Get(s, "mainSubStatName")!).Contains("e2e-family")) == 1,
+                    "family registration did not contribute exactly once (candidate=" + otherModule!.GetType().Name + " saw=" + (familySeen?.Kind.ToString() ?? "nothing") + " vanilla=" + vanillaLineCount + ")");
             }
             Require(familySeen != null && familySeen.Kind != ShipModuleKind.Tractor && familySeen.Tractor == null,
                 "non-tractor module received a tractor snapshot or no payload");
@@ -189,10 +189,13 @@ internal static class TractorCase
                 tooltipType.GetProperty("Source", Any)!.SetValue(tooltip, source, null); // Show() normally wires this before filling.
                 tooltipType.GetMethod("SetContent", Any)!.Invoke(tooltip, new object[] { source });
                 string[] Lines() => ((IEnumerable)Get(tooltip, "_contentList")!).Cast<object>().Select(c => c.GetType().GetProperty("Text", Any)?.GetValue(c)).Where(t => t != null).Select(t => (string)t!.GetType().GetProperty("text", Any)!.GetValue(t)!).ToArray();
-                Require(Lines().Any(t => t.Contains("e2e-item") && t.Contains("<color=")), "item tooltip contribution missing or unstyled");
+                Require(Lines().Count(t => t.Contains("e2e-item") && t.Contains("<color=")) == 1, "item tooltip did not contribute exactly once, styled");
                 Require(itemSeen != null && itemSeen.Identifier == expectedId && itemSeen.DisplayName.Length > 0 && itemSeen.Count == 7,
                     "item snapshot identity/stack mismatch (saw " + (itemSeen == null ? "nothing" : itemSeen.Identifier + " x" + itemSeen.Count) + ")");
             }
+            // Leave the live panel showing current vanilla content, not the test fixture's lines.
+            otherStats.SetValue(otherModule!, Activator.CreateInstance(otherStats.FieldType));
+            otherModule!.GetType().GetMethod("SetMainSubStats", Any)!.Invoke(otherModule, null);
 
             // Build a native mastery tooltip from a real UI prefab, without desktop interaction.
             var badgeGo = new GameObject("tractor-e2e-mastery"); badgeGo.SetActive(false); temporary.Add(badgeGo);
