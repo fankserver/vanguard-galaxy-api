@@ -31,6 +31,21 @@ internal sealed class ModSettingsPresenter
         _selected = (_selected + delta + _rows.Count) % _rows.Count;
     }
 
+    internal bool Select(int index)
+    {
+        if (index < 0 || index >= _rows.Count) return false;
+        _selected = index;
+        return true;
+    }
+
+    internal string RowName(int index) => _rows[index].Definition.Name;
+    internal string RowValue(int index)
+    {
+        var row = _rows[index];
+        var value = _service.TryRead(row, out var current) ? DisplayValue(row.Definition, current!) : "Unavailable";
+        return row.Definition.ApplyMode == ModSettingApplyMode.RestartRequired ? value + " (restart)" : value;
+    }
+
     internal bool Change(int direction)
     {
         var row = Selected;
@@ -58,8 +73,7 @@ internal sealed class ModSettingsPresenter
         var definition = row.Definition;
         var value = _service.TryRead(row, out var current) ? DisplayValue(definition, current!) : "Unavailable";
         var restart = definition.ApplyMode == ModSettingApplyMode.RestartRequired ? "\nApplies after restart." : "";
-        return definition.Group + "\n" + definition.Name + "\n\nCurrent: " + value + restart + "\n\n" + definition.Description +
-            "\n\nSetting " + (_selected + 1).ToString(CultureInfo.InvariantCulture) + " of " + _rows.Count.ToString(CultureInfo.InvariantCulture);
+        return definition.Group + " \u2014 " + definition.Name + "\nCurrent: " + value + restart + "\n\n" + definition.Description;
     }
 
     internal string DecreaseLabel => Selected?.Definition switch

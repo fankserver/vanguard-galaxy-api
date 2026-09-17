@@ -60,8 +60,9 @@ internal static class ModSettingsMenuCase
                 () => FindPanelButton("Settings")?.interactable == true ? StepResult.Pass("Settings available") : StepResult.Wait("settings disabled")),
             TestStep.ActionThenWait("open UI Surfaces settings", "Settings / ModSettingsPresenter", 10,
                 () => { Invoke(FindPanelButton("Settings") ?? throw new InvalidOperationException("Settings button missing")); return StepResult.Pass("submitted"); },
-                () => FindPanelButton("Reset to default")?.gameObject.activeInHierarchy == true && FindPanelButton("Previous setting")?.gameObject.activeInHierarchy == true
-                    ? StepResult.Pass("settings controls visible") : StepResult.Wait("settings controls hidden")),
+                () => FindPanelButton("Reset to default")?.gameObject.activeInHierarchy == true && FindPanelButton("Back")?.gameObject.activeInHierarchy == true
+                    && Panel?.transform.Find("Content/Setting rows")?.gameObject.activeInHierarchy == true
+                    ? StepResult.Pass("settings list and controls visible") : StepResult.Wait("settings controls hidden")),
             new TestStep("settings view renders published preference", "ModSettingsPresenter / TMP text", 10, () =>
             {
                 var labels = Panel?.GetComponentsInChildren<TMP_Text>(true).Where(t => t.gameObject.activeInHierarchy).Select(t => t.text).ToArray()

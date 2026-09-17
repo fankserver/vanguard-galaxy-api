@@ -26,9 +26,10 @@ internal sealed class ModMenuView : IModMenuView
     private readonly List<Action> _removeListeners = new();
     private readonly List<GameObject> _ownedRoots = new();
     private Button _entry = null!, _close = null!, _project = null!, _settingsButton = null!;
-    private Button _settingBack = null!, _settingPrevious = null!, _settingNext = null!, _settingDecrease = null!, _settingIncrease = null!, _settingReset = null!;
-    private RectTransform _panel = null!, _body = null!, _listContent = null!, _detailsContent = null!;
-    private ScrollRect _list = null!, _details = null!;
+    private Button _settingBack = null!, _settingDecrease = null!, _settingIncrease = null!, _settingReset = null!;
+    private readonly List<Button> _settingRows = new();
+    private RectTransform _panel = null!, _body = null!, _listContent = null!, _detailsContent = null!, _settingListContent = null!;
+    private ScrollRect _list = null!, _details = null!, _settingList = null!;
     private TMP_Text _heading = null!, _summary = null!, _updateStatus = null!, _detailText = null!;
     private TMP_FontAsset _font = null!;
     private Sprite? _sprite;
@@ -125,18 +126,16 @@ internal sealed class ModMenuView : IModMenuView
             Stretch((RectTransform)_release.transform, .78f, 0, 1, 0, 4, 8, -8, 40);
             _checkUpdate = Button(_body, "Check updates", "Check for updates", () => { _updates.CheckAll(_presenter.Rows); RenderDetails(false); });
         }
+        _settingList = Scroll(_body, "Setting rows", out _settingListContent);
+        Stretch((RectTransform)_settingList.transform, .46f, .4f, 1, 1, 8, 4, -8, -70);
         _settingBack = Button(_body, "Settings back", "Back", ExitSettings);
-        _settingPrevious = Button(_body, "Previous setting", "Previous setting", () => { _settingPresenter.Move(-1); RenderSettings(); });
-        _settingNext = Button(_body, "Next setting", "Next setting", () => { _settingPresenter.Move(1); RenderSettings(); });
         _settingDecrease = Button(_body, "Decrease setting", "Change", () => { _settingPresenter.Change(-1); RenderSettings(); });
         _settingIncrease = Button(_body, "Increase setting", "Increase", () => { _settingPresenter.Change(1); RenderSettings(); });
         _settingReset = Button(_body, "Reset setting", "Reset to default", () => { _settingPresenter.Reset(); RenderSettings(); });
-        Stretch((RectTransform)_settingBack.transform, .46f, 0, .58f, 0, 8, 8, -4, 40);
-        Stretch((RectTransform)_settingPrevious.transform, .58f, 0, .70f, 0, 4, 8, -4, 40);
-        Stretch((RectTransform)_settingNext.transform, .70f, 0, .82f, 0, 4, 8, -4, 40);
-        Stretch((RectTransform)_settingReset.transform, .82f, 0, 1, 0, 4, 8, -8, 40);
-        Stretch((RectTransform)_settingDecrease.transform, .46f, 0, .70f, 0, 8, 48, -4, 80);
-        Stretch((RectTransform)_settingIncrease.transform, .70f, 0, 1, 0, 4, 48, -8, 80);
+        Stretch((RectTransform)_settingBack.transform, .46f, 0, .575f, 0, 8, 8, -4, 40);
+        Stretch((RectTransform)_settingDecrease.transform, .575f, 0, .72f, 0, 4, 8, -4, 40);
+        Stretch((RectTransform)_settingIncrease.transform, .72f, 0, .86f, 0, 4, 8, -4, 40);
+        Stretch((RectTransform)_settingReset.transform, .86f, 0, 1, 0, 4, 8, -8, 40);
         SetSettingsControls(false);
     }
 
@@ -333,7 +332,42 @@ internal sealed class ModMenuView : IModMenuView
         var providerId = _presenter.Selected?.PluginId;
         if (providerId == null || !_settingPresenter.Open(providerId)) return;
         _settingsMode = true;
+        BuildSettingRows();
         RenderSettings();
+        if (_settingRows.Count > 0) Select(_settingRows[0].gameObject);
+    }
+
+    private void BuildSettingRows()
+    {
+        ClearSettingRows();
+        for (var index = 0; index < _settingPresenter.Rows.Count; ++index)
+        {
+            var setting = index;
+            var row = Button(_settingListContent, "Setting row " + setting, "", () => { if (_settingPresenter.Select(setting)) RenderSettings(); });
+            var name = row.GetComponentInChildren<TMP_Text>();
+            name.enableAutoSizing = false;
+            name.alignment = TextAlignmentOptions.MidlineLeft;
+            Stretch(name.rectTransform, 0, 0, .55f, 1, 10, 0, -4, 0);
+            var value = Text(row.transform, "Setting value", "");
+            value.alignment = TextAlignmentOptions.MidlineRight;
+            value.color = new Color(.75f, .85f, .95f, 1);
+            Stretch(value.rectTransform, .55f, 0, 1, 1, 0, 0, -10, 0);
+            var stripe = Rect(row.transform, "Selection stripe");
+            Stretch(stripe, 0, 0, 0, 1, 0, 0, 3, 0);
+            var stripeImage = stripe.gameObject.AddComponent<Image>();
+            stripeImage.color = new Color(.4f, .85f, 1, 1); stripeImage.raycastTarget = false;
+            Stretch((RectTransform)row.transform, 0, 1, 1, 1, 0, -(setting + 1) * SettingRowHeight + 2, 0, -setting * SettingRowHeight - 2);
+            _settingRows.Add(row);
+        }
+        _settingListContent.sizeDelta = new Vector2(0, _settingPresenter.Rows.Count * SettingRowHeight);
+        _settingList.StopMovement();
+        _settingListContent.anchoredPosition = Vector2.zero;
+    }
+
+    private void ClearSettingRows()
+    {
+        foreach (var row in _settingRows) if (row != null) Object.Destroy(row.gameObject);
+        _settingRows.Clear();
     }
 
     private void ExitSettings()
@@ -355,6 +389,21 @@ internal sealed class ModMenuView : IModMenuView
         _settingsButton.gameObject.SetActive(false);
         if (_updates != null) { _checkUpdate.gameObject.SetActive(false); _release.gameObject.SetActive(false); }
         SetSettingsControls(true);
+        for (var index = 0; index < _settingRows.Count; ++index)
+        {
+            var row = _settingRows[index];
+            row.GetComponentInChildren<TMP_Text>().text = _settingPresenter.RowName(index);
+            row.transform.Find("Setting value").GetComponent<TMP_Text>().text = _settingPresenter.RowValue(index);
+            var colors = _colors;
+            if (index == _settingPresenter.SelectedIndex)
+            {
+                colors.normalColor = new Color(.25f, .65f, .85f, 1);
+                colors.highlightedColor = new Color(.4f, .8f, 1, 1);
+                colors.selectedColor = colors.highlightedColor;
+            }
+            row.colors = colors;
+            row.transform.Find("Selection stripe").gameObject.SetActive(index == _settingPresenter.SelectedIndex);
+        }
         _settingDecrease.GetComponentInChildren<TMP_Text>().text = _settingPresenter.DecreaseLabel;
         _settingIncrease.GetComponentInChildren<TMP_Text>().text = _settingPresenter.IncreaseLabel;
         _settingIncrease.gameObject.SetActive(_settingPresenter.ShowIncrease);
@@ -362,10 +411,14 @@ internal sealed class ModMenuView : IModMenuView
         ResizeDetails(); UpdateScrollbars(); RebuildNavigation();
     }
 
+    private const int SettingRowHeight = 44;
+
     private void SetSettingsControls(bool visible)
     {
-        foreach (var button in new[] { _settingBack, _settingPrevious, _settingNext, _settingDecrease, _settingIncrease, _settingReset })
+        foreach (var button in new[] { _settingBack, _settingDecrease, _settingIncrease, _settingReset })
             if (button != null) button.gameObject.SetActive(visible);
+        if (_settingList != null) _settingList.gameObject.SetActive(visible);
+        if (!visible) ClearSettingRows();
     }
 
     private void RenderDetails(bool resetScroll = true)
@@ -400,7 +453,7 @@ internal sealed class ModMenuView : IModMenuView
     {
         if (_settingsMode)
         {
-            Stretch((RectTransform)_details.transform, .46f, 0, 1, 1, 8, 88, -8, -70);
+            Stretch((RectTransform)_details.transform, .46f, 0, 1, .4f, 8, 48, -8, -4);
             Canvas.ForceUpdateCanvases();
             var settingsWidth = Mathf.Max(1, _details.viewport.rect.width - 14);
             var settingsHeight = _detailText.GetPreferredValues(_detailText.text, settingsWidth, float.PositiveInfinity).y + 16;
@@ -428,8 +481,9 @@ internal sealed class ModMenuView : IModMenuView
     private void UpdateScrollbars()
     {
         var changed = false;
-        foreach (var scroll in new[] { _list, _details })
+        foreach (var scroll in new[] { _list, _details, _settingList })
         {
+            if (scroll == _settingList && !_settingsMode) continue;
             var visible = scroll.content.rect.height > scroll.viewport.rect.height + 1;
             if (scroll.verticalScrollbar.gameObject.activeSelf == visible) continue;
             scroll.verticalScrollbar.gameObject.SetActive(visible);
@@ -444,7 +498,8 @@ internal sealed class ModMenuView : IModMenuView
         foreach (var row in _rows) if (row.gameObject.activeSelf) _navigation.Add(row);
         if (_settingsMode)
         {
-            foreach (var button in new[] { _settingBack, _settingPrevious, _settingNext, _settingDecrease, _settingIncrease, _settingReset })
+            foreach (var row in _settingRows) if (row.gameObject.activeSelf) _navigation.Add(row);
+            foreach (var button in new[] { _settingBack, _settingDecrease, _settingIncrease, _settingReset })
                 if (button.gameObject.activeSelf && button.interactable) _navigation.Add(button);
         }
         else
@@ -458,6 +513,7 @@ internal sealed class ModMenuView : IModMenuView
             if (_release.gameObject.activeSelf && _release.interactable) _navigation.Add(_release);
         }
         if (_list.verticalScrollbar.gameObject.activeSelf) _navigation.Add(_list.verticalScrollbar);
+        if (_settingsMode && _settingList.verticalScrollbar.gameObject.activeSelf) _navigation.Add(_settingList.verticalScrollbar);
         if (_details.verticalScrollbar.gameObject.activeSelf) _navigation.Add(_details.verticalScrollbar);
         for (var i = 0; i < _navigation.Count; ++i)
         {

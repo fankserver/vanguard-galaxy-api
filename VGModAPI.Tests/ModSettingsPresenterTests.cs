@@ -24,7 +24,10 @@ public sealed class ModSettingsPresenterTests
         Assert.False(presenter.ShowIncrease);
         Assert.True(presenter.Change(-1));
         Assert.True(enabled);
-        presenter.Move(1);
+        Assert.Equal("Enabled", presenter.RowName(0));
+        Assert.Equal("On", presenter.RowValue(0));
+        Assert.True(presenter.Select(1));
+        Assert.False(presenter.Select(2));
         Assert.Equal("20", presenter.ValueLabel());
         Assert.True(presenter.ShowIncrease);
         Assert.True(presenter.Change(1));
@@ -46,6 +49,7 @@ public sealed class ModSettingsPresenterTests
         var presenter = new ModSettingsPresenter(service);
         Assert.True(presenter.Open("echo"));
         Assert.Contains("Applies after restart.", presenter.Details());
+        Assert.Equal("Tiered (restart)", presenter.RowValue(0));
         Assert.Equal("Previous value", presenter.DecreaseLabel);
         Assert.Equal("Next value", presenter.IncreaseLabel);
         Assert.True(presenter.Change(-1));
