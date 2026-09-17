@@ -82,9 +82,9 @@ set (all examples + the E2E harness are deployed), only the driven workflow diff
 make e2e E2E_CASE=pocket-worlds
 ```
 
-Consumer-mod DLLs outside this repository (e.g. `VGTractorAuto.dll`) are staged when
-present in the build directory; copy the built DLL there before `make e2e`, or the
-case that asserts on it fails with a missing-registration detail.
+Extra plugin DLLs an operator wants staged (anything built into the build directory) are
+passed explicitly: `make e2e E2E_CASE=… E2E_STAGE=Foo.dll`. The harness never knows any
+consumer mod by name; each staged extra is recorded in the report with sha256 and mtime.
 
 ## `pocket-worlds`
 
@@ -136,21 +136,18 @@ stat list and the Engineering mastery badge each carry the example's line exactl
 once; with it off, neither does. The Forge inspector is availability-dependent, so
 it is not gated here.
 
-## `tractor-module`
+## `equipment-policy`
 
-Runs against the sibling VGTractorAuto consumer DLL when it is staged (see optional
-assemblies below). Drives the real player tractor module through the public
-Equipment/SkillTrees/Tooltips surfaces: zero/half/max mastery promotion caps, manual
-borrowing, occupied-beam protection, native target eligibility and ordering, plus
-exactly-once contributions on a non-tractor equipment module's stat builder, an
-instantiated item tooltip and a native mastery badge, with the disabled mod adding
-nothing. All fixture state (beams, targets, stats, config) is restored afterwards.
+Verifies the equipment-targeting surface with API-owned registrations only: abstain-by-absence
+(vanilla cap), a registered rule at +2 borrowing exactly two free manual beams, a later rule
+staying invisible while an earlier one answers (first non-null wins), disposal handing the decision
+to the remaining rule, occupied beams never handed out, and teardown restoring vanilla behavior.
+All fixture state (beams, targets, temporary objects) is restored afterwards.
 
-## `tractor-guide`
+## `equipment-targeting`
 
-Runs the in-repo TractorGuide example as the mod under test: the `ExtraAutoBeam`
-setting alone gates one borrowed manual beam (off ⇒ vanilla cap, on ⇒ borrows a
-free manual beam), isolated from the optional sibling consumer.
+Runs the in-repo EquipmentTargeting example as the mod under test: the `ExtraAutoBeam` setting
+alone gates one borrowed manual beam (off ⇒ vanilla cap, on ⇒ borrows a free manual beam).
 
 ## Coverage status
 

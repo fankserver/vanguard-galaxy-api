@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Independent example author demonstrating equipment targeting policy, skill-tree reads and
-       the three tooltip families. Never part of the shipped API package. -->
+  <!-- Independent example author demonstrating an equipment targeting policy owned by the mod. Never part of the shipped API package. -->
   <PropertyGroup><TargetFramework>netstandard2.1</TargetFramework><IsPackable>false</IsPackable></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../VGModAPI.Abstractions/VGModAPI.Abstractions.csproj" Private="false" />

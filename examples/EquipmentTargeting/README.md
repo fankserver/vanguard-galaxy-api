@@ -1,7 +1,7 @@
-# TractorGuide
+# EquipmentTargeting
 
-**What you can build with this: one gameplay decision for the tractor autopilot, without a single
-Harmony patch.** Your mod answers "what may the autopilot use?"; the API owns the only hook into
+**What you can build with this: your own equipment-targeting decision, without a single Harmony
+patch.** Your mod answers "what may the autopilot use?"; the API owns the only hook into
 the game, and the game keeps every native protection.
 
 A sample/test BepInEx mod for the **VG Mod API** (development build; requires the matching
@@ -23,12 +23,12 @@ on the example's own trade good).
 
 ## Try it
 
-1. Deploy `TractorGuide.dll` next to the API and set `ExtraAutoBeam = true` in
-   `BepInEx/config/vgmodapi.example.tractor-guide.cfg`.
+1. Deploy `EquipmentTargeting.dll` next to the API and set `ExtraAutoBeam = true` in
+   `BepInEx/config/vgmodapi.example.equipment-targeting.cfg`.
 2. Dock somewhere with loot. While every automatic beam is busy, the autopilot now also uses one
    free manual beam. With the setting off, it never does.
 3. Disable the mod: the extra beam is gone — the game's own beam rules were never replaced.
 
-The `tractor-guide` E2E case (`make e2e E2E_CASE=tractor-guide`) verifies exactly this sequence
+The `equipment-targeting` E2E case (`make e2e E2E_CASE=equipment-targeting`) verifies exactly this sequence
 deterministically in a real session, including the off ⇒ vanilla-cap negative and full fixture
 restore.

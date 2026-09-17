@@ -75,11 +75,11 @@ e2e-build: link-libs
 	@set -eu; for dll in VGModAPI VGModAPI.Core VGModAPI.Abstractions VGModAPI.Unity; do cp "VGModAPI/bin/$(CONFIGURATION)/netstandard2.1/$$dll.dll" "$(E2E_BUILD)/"; done
 	cp VGModAPI.E2E/bin/$(CONFIGURATION)/netstandard2.1/VGModAPI.E2E.dll "$(E2E_BUILD)/"
 	cp VGModAPI.E2E/bin/$(CONFIGURATION)/netstandard2.1/Newtonsoft.Json.dll "$(E2E_BUILD)/"
-	@set -eu; for dll in PocketWorlds CargoRecovery StoryMissions StationCommerce StationCommerceB UiSurfaces Observation TractorGuide; do \
+	@set -eu; for dll in PocketWorlds CargoRecovery StoryMissions StationCommerce StationCommerceB UiSurfaces Observation EquipmentTargeting; do \
 		f=$$(find examples -path '*/bin/$(CONFIGURATION)/netstandard2.1/'"$$dll"'.dll' | head -n 1); \
 		if [ -n "$$f" ]; then cp "$$f" "$(E2E_BUILD)/"; else echo "e2e staging missing example dll: $$dll" >&2; exit 1; fi; \
 	done
 e2e: e2e-build
-	$(E2E_PYTHON) tools/e2e.py --game-dir '$(call E2E_PATH,$(GAME_DIR))' --build-dir '$(call E2E_PATH,$(E2E_BUILD))' --runtime-dir '$(call E2E_PATH,$(E2E_RUNTIME))' $(if $(E2E_SAVE_DIR),--save-dir '$(call E2E_PATH,$(E2E_SAVE_DIR))') --case $(E2E_CASE) --launch --timeout $(E2E_TIMEOUT)
+	$(E2E_PYTHON) tools/e2e.py --game-dir '$(call E2E_PATH,$(GAME_DIR))' --build-dir '$(call E2E_PATH,$(E2E_BUILD))' --runtime-dir '$(call E2E_PATH,$(E2E_RUNTIME))' $(if $(E2E_SAVE_DIR),--save-dir '$(call E2E_PATH,$(E2E_SAVE_DIR))') --case $(E2E_CASE) --launch --timeout $(E2E_TIMEOUT) $(addprefix --stage ,$(E2E_STAGE))
 clean:
 	$(DOTNET) clean VGModAPI.sln
