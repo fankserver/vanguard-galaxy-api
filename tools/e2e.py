@@ -73,6 +73,7 @@ class GameInstallation:
         self.build = Path(build)
         self.backup = self.root / ".vgmodapi-e2e-backup"
         self.moved = []
+        self.staged_optional = []
         self.created = []
 
     def __enter__(self):
@@ -100,6 +101,12 @@ class GameInstallation:
             target.mkdir()
             for name in ASSEMBLIES + tuple(n for n in OPTIONAL_ASSEMBLIES if (self.build / n).is_file()):
                 shutil.copy2(self.build / name, target / name)
+                if name in OPTIONAL_ASSEMBLIES:
+                    # Out-of-repo consumer DLLs are not rebuilt by e2e-build; record exactly which
+                    # bytes were staged so a stale leftover is attributable in the report.
+                    data = (self.build / name).read_bytes()
+                    self.staged_optional.append({"name": name, "sha256": hashlib.sha256(data).hexdigest(),
+                                                 "mtimeMs": int((self.build / name).stat().st_mtime * 1000)})
             # The staging vacuums the real config/ for isolation, which drops the API back to its
             # disabled-by-default providers. Enable the ones the example cases exercise (Story drives
             # station-commerce's errand and the story-missions case; Bars backs the bar-contact examples).
@@ -347,8 +354,9 @@ def main(argv=None):
     shutil.rmtree(runtime / "screenshots", ignore_errors=True)
     report = new_report()
     try:
-        with SaveGuard(saves, allow_missing=args.save_dir is None), GameInstallation(game, build):
+        with SaveGuard(saves, allow_missing=args.save_dir is None), GameInstallation(game, build) as installation:
             run_game(game, runtime, args.timeout, report)
+        report["meta"]["stagedOptionalAssemblies"] = list(installation.staged_optional)
         report["meta"]["realSavesUnchanged"] = True
         report["meta"]["installationRestored"] = True
     except (E2EError, OSError, KeyboardInterrupt) as error:

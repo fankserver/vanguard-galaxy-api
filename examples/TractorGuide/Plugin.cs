@@ -19,8 +19,8 @@ namespace TractorGuide
         public const string Name = "Tractor Guide";
         public const string Version = "1.0.0";
 
-        private readonly ConfigEntry<bool> _extraAutoBeam = null!;
-        private readonly ConfigEntry<string> _highlightItem = null!;
+        private readonly ConfigEntry<bool> _extraAutoBeam;
+        private readonly ConfigEntry<string> _highlightItem;
         private IDisposable? _equipment;
         private IDisposable? _moduleTooltip;
         private IDisposable? _itemTooltip;

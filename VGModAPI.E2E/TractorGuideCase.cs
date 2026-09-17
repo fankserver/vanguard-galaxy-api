@@ -43,6 +43,7 @@ internal static class TractorGuideCase
         object? otherEnabled = otherConsumer == null ? null : Get(otherConsumer, "_enabled");
         PropertyInfo? otherEnabledValue = otherEnabled?.GetType().GetProperty("Value");
         object? oldOtherEnabled = otherEnabledValue == null ? null : otherEnabledValue.GetValue(otherEnabled);
+        Require(otherConsumer == null || otherEnabled != null, "staged VGTractorAuto lacks the _enabled setting the isolation relies on");
 
         var manualField = Field(moduleType, "amountOfBonusBeams"); var oldManual = manualField.GetValue(module);
         var beams = (IList)Get(module, "tractorBeams")!; int originalBeamCount = beams.Count;
