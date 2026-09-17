@@ -25,11 +25,6 @@ internal sealed class ModSettingsPresenter
     }
 
     internal void Close() { _rows = Array.Empty<PublishedModSetting>(); _selected = 0; }
-    internal void Move(int delta)
-    {
-        if (_rows.Count == 0) return;
-        _selected = (_selected + delta + _rows.Count) % _rows.Count;
-    }
 
     internal bool Select(int index)
     {
@@ -38,33 +33,74 @@ internal sealed class ModSettingsPresenter
         return true;
     }
 
-    internal string RowName(int index) => _rows[index].Definition.Name;
+    internal string RowName(int index)
+    {
+        var definition = _rows[index].Definition;
+        return definition.ApplyMode == ModSettingApplyMode.RestartRequired ? definition.Name + " *" : definition.Name;
+    }
+
     internal string RowValue(int index)
     {
         var row = _rows[index];
-        var value = _service.TryRead(row, out var current) ? DisplayValue(row.Definition, current!) : "Unavailable";
-        return row.Definition.ApplyMode == ModSettingApplyMode.RestartRequired ? value + " (restart)" : value;
+        return _service.TryRead(row, out var current) ? DisplayValue(row.Definition, current!) : "Unavailable";
     }
 
-    internal bool Change(int direction)
+    internal bool TryBool(int index, out bool value)
     {
-        var row = Selected;
-        if (row == null) return false;
-        if (!_service.TryRead(row, out var current))
-            return row.Definition is ChoiceModSetting invalidChoice && current is string
-                ? _service.TryWrite(row, invalidChoice.DefaultValue)
-                : false;
+        value = false;
+        if (_rows[index].Definition is not BoolModSetting || !_service.TryRead(_rows[index], out var current)) return false;
+        value = (bool)current!;
+        return true;
+    }
+
+    internal bool SetBool(int index, bool value) =>
+        _rows[index].Definition is BoolModSetting && _service.TryWrite(_rows[index], value);
+
+    internal bool TryNumber(int index, out float value, out float minimum, out float maximum, out float step, out bool wholeNumbers)
+    {
+        value = minimum = maximum = step = 0; wholeNumbers = false;
+        var row = _rows[index];
+        if (!_service.TryRead(row, out var current)) return false;
+        switch (row.Definition)
+        {
+            case IntModSetting item:
+                value = (int)current!; minimum = item.Minimum; maximum = item.Maximum; step = item.Step; wholeNumbers = true;
+                return true;
+            case FloatModSetting item:
+                value = (float)current!; minimum = item.Minimum; maximum = item.Maximum; step = item.Step;
+                return true;
+            default: return false;
+        }
+    }
+
+    internal bool SetNumber(int index, float raw)
+    {
+        var row = _rows[index];
         return row.Definition switch
         {
-            BoolModSetting => _service.TryWrite(row, !(bool)current!),
-            IntModSetting item => _service.TryWrite(row, Clamp((long)(int)current! + (direction < 0 ? -(long)item.Step : item.Step), item.Minimum, item.Maximum)),
-            FloatModSetting item => _service.TryWrite(row, Clamp((float)current! + (direction < 0 ? -item.Step : item.Step), item.Minimum, item.Maximum)),
-            ChoiceModSetting item => ChangeChoice(row, item, (string)current!, direction),
+            IntModSetting item => _service.TryWrite(row, (int)Snap(raw, item.Minimum, item.Maximum, item.Step)),
+            FloatModSetting item => _service.TryWrite(row, Snap(raw, item.Minimum, item.Maximum, item.Step)),
             _ => false
         };
     }
 
-    internal bool Reset() => Selected != null && _service.TryReset(Selected);
+    internal bool CycleChoice(int index, int direction)
+    {
+        var row = _rows[index];
+        if (row.Definition is not ChoiceModSetting setting) return false;
+        if (!_service.TryRead(row, out var current)) return _service.TryWrite(row, setting.DefaultValue);
+        var position = setting.Choices.ToList().FindIndex(choice => choice.Value == (string)current!);
+        if (position < 0) return _service.TryWrite(row, setting.DefaultValue);
+        position = (position + (direction < 0 ? -1 : 1) + setting.Choices.Count) % setting.Choices.Count;
+        return _service.TryWrite(row, setting.Choices[position].Value);
+    }
+
+    internal bool ResetAll()
+    {
+        var changed = false;
+        foreach (var row in _rows) changed |= _service.TryReset(row);
+        return changed;
+    }
 
     internal string Details()
     {
@@ -72,31 +108,8 @@ internal sealed class ModSettingsPresenter
         if (row == null) return "No in-game settings published.";
         var definition = row.Definition;
         var value = _service.TryRead(row, out var current) ? DisplayValue(definition, current!) : "Unavailable";
-        var restart = definition.ApplyMode == ModSettingApplyMode.RestartRequired ? "\nApplies after restart." : "";
-        return definition.Group + " / " + definition.Name + "\nCurrent: " + value + restart + "\n\n" + definition.Description;
-    }
-
-    internal string DecreaseLabel => Selected?.Definition switch
-    {
-        BoolModSetting => "Toggle",
-        ChoiceModSetting => "Previous value",
-        _ => "Decrease"
-    };
-    internal string IncreaseLabel => Selected?.Definition is ChoiceModSetting ? "Next value" : "Increase";
-    internal bool ShowIncrease => Selected?.Definition is IntModSetting or FloatModSetting or ChoiceModSetting;
-
-    internal string ValueLabel()
-    {
-        var row = Selected;
-        return row != null && _service.TryRead(row, out var value) ? DisplayValue(row.Definition, value!) : "Unavailable";
-    }
-
-    private bool ChangeChoice(PublishedModSetting row, ChoiceModSetting setting, string current, int direction)
-    {
-        var index = setting.Choices.ToList().FindIndex(choice => choice.Value == current);
-        if (index < 0) return false;
-        index = (index + (direction < 0 ? -1 : 1) + setting.Choices.Count) % setting.Choices.Count;
-        return _service.TryWrite(row, setting.Choices[index].Value);
+        var restart = definition.ApplyMode == ModSettingApplyMode.RestartRequired ? "\n* Applies after restart." : "";
+        return definition.Group + " / " + definition.Name + "  (current: " + value + ")" + restart + "\n" + definition.Description;
     }
 
     private static string DisplayValue(ModSettingDefinition definition, object value) => definition switch
@@ -104,10 +117,13 @@ internal sealed class ModSettingsPresenter
         BoolModSetting => (bool)value ? "On" : "Off",
         IntModSetting => ((int)value).ToString(CultureInfo.InvariantCulture),
         FloatModSetting => ((float)value).ToString("0.###", CultureInfo.InvariantCulture),
-        ChoiceModSetting item => item.Choices.First(choice => choice.Value == (string)value).Name,
+        ChoiceModSetting item => item.Choices.FirstOrDefault(choice => choice.Value == (string)value)?.Name ?? "Unavailable",
         _ => "Unavailable"
     };
 
-    private static int Clamp(long value, int minimum, int maximum) => (int)Math.Max(minimum, Math.Min(maximum, value));
-    private static float Clamp(float value, float minimum, float maximum) => Math.Max(minimum, Math.Min(maximum, value));
+    private static float Snap(float value, float minimum, float maximum, float step)
+    {
+        var snapped = step > 0 ? minimum + (float)Math.Round((value - minimum) / step) * step : value;
+        return Math.Max(minimum, Math.Min(maximum, snapped));
+    }
 }
