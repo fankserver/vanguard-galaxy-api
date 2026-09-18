@@ -27,7 +27,7 @@ internal static class UiSurfacesCase
                 () => NativeGameplay.ClickHudRow("Example window") ? StepResult.Pass("Launcher invoked") : StepResult.Wait("Launcher not ready"),
                 () => Window()?.activeSelf == true ? StepResult.Pass("Window visible") : StepResult.Wait("Window not visible")),
             new TestStep("typed settings change the live window and persist global config", "ModSettingsService / ConfigEntry / UiSurfaces", 20, VerifySettings),
-            new TestStep("annotated module and mastery tooltips follow the typed setting", "Tooltips.RegisterShipModule / RegisterSkillTree / ConfigEntry", 30, VerifyTooltipAnnotations),
+            new TestStep("annotations always render; the presentation-only row gates nothing", "Tooltips.RegisterShipModule / RegisterSkillTree / ConfigEntry", 30, VerifyTooltipAnnotations),
             TestStep.ActionThenWait("click launcher toggles the window closed", "UiSurfaces.ToggleWindow / GameObject.SetActive", 20,
                 () => NativeGameplay.ClickHudRow("Example window") ? StepResult.Pass("Launcher invoked") : StepResult.Wait("Launcher not ready"),
                 () => Window()?.activeSelf == false ? StepResult.Pass("Window hidden") : StepResult.Wait("Window still visible")),
@@ -66,7 +66,7 @@ internal static class UiSurfacesCase
                 }
                 Require(Build().Count(t => t.StartsWith("UiSurfaces: Tractor module")) == 1, "module annotation missing or duplicated");
                 valueProp.SetValue(annotate, false);
-                Require(!Build().Any(t => t.StartsWith("UiSurfaces:")), "module annotation shown while the setting is off");
+                Require(Build().Count(t => t.StartsWith("UiSurfaces: Tractor module")) == 1, "the presentation-only row gated the module annotation");
             }
             finally { statsField.SetValue(module, oldStats); }
             var tree = ModApi.Services.SkillTrees.Get(CommanderSpecialization.Engineering) ?? throw new InvalidOperationException("engineering tree unavailable");
@@ -80,7 +80,6 @@ internal static class UiSurfacesCase
                 var badgeType = a.GetType("Behaviour.UI.MasteryBadge", true)!;
                 var badge = badgeGo.AddComponent(badgeType);
                 DeclaredField(badgeType, "<skillTree>k__BackingField").SetValue(badge, nativeTree);
-                valueProp.SetValue(annotate, true);
                 var tooltip = tipGo.GetComponent(tooltipType)!;
                 badgeType.GetMethod("AddTooltipCustomContent", All)!.Invoke(badge, new object[] { tooltip });
                 var lines = ((IEnumerable)Prop(tooltip, "_contentList")!).Cast<object>().Select(c => c.GetType().GetProperty("Text", Any)?.GetValue(c)).Where(t => t != null).Select(t => (string)t!.GetType().GetProperty("text", Any)!.GetValue(t)!).ToArray();
@@ -89,7 +88,7 @@ internal static class UiSurfacesCase
             finally { UnityEngine.Object.Destroy(tipGo); UnityEngine.Object.Destroy(badgeGo); }
         }
         finally { valueProp.SetValue(annotate, old); }
-        Debug.Log("UI Surfaces E2E: opt-in module and mastery annotations rendered exactly once through the example's own tooltip registrations.");
+        Debug.Log("UI Surfaces E2E: module and mastery annotations always render exactly once; the presentation-only row changes nothing.");
         return StepResult.Pass("Tooltip annotations verified");
     }
     private static void Require(bool condition, string detail) { if (!condition) throw new InvalidOperationException(detail); }

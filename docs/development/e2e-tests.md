@@ -146,8 +146,9 @@ All fixture state (beams, targets, temporary objects) is restored afterwards.
 
 ## `equipment-targeting`
 
-Runs the in-repo EquipmentTargeting example as the mod under test: the `ExtraAutoBeam` setting
-alone gates one borrowed manual beam (off ⇒ vanilla cap, on ⇒ borrows a free manual beam).
+Runs the in-repo EquipmentTargeting example as the mod under test: the example's policy always
+borrows one free manual beam when every automatic beam is busy, and toggling its
+presentation-only `ExtraAutoBeam` row changes nothing.
 
 ## Coverage status
 

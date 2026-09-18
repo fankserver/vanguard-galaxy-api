@@ -34,6 +34,7 @@ trigger saves, change save paths, or load saves on your behalf.
 | Count toggle, goal display toggle, goal, opacity, theme | BepInEx config (`vgmodapi.example.ui-surfaces.cfg`), global across games and restarts. The settings API uses getter/setter callbacks; it does not store another copy. |
 | Window-open count | VGModAPI `SaveData`, per save. Registered once before a session starts; captured on supported game saves and restored by the API on load/new game. |
 | Window visibility, Forge inspector | Temporary UI state, discarded with the UI host/session. |
+| Tooltip annotations (module stat line, Engineering mastery line) | Registered unconditionally via `ITooltipService.RegisterShipModule`/`RegisterSkillTree` in `Start` and always shown, so the surface is visible without touching any setting. The `AnnotateModules` row is presentation-only: it demos typed settings plumbing and gates nothing. |
 
 The window explicitly distinguishes in-memory changes from durable saves. When
 save data is blocked or inaccessible it shows the state and refuses counting. A
@@ -41,7 +42,7 @@ failed registration does not create a fake in-memory persistence fallback.
 
 ## Files to copy or adapt
 
-- `Plugin.Settings.cs`: five explicit `ConfigEntry`-backed registrations across two groups. Settings
+- `Plugin.Settings.cs`: six explicit `ConfigEntry`-backed registrations across three groups, plus the two tooltip registrations. Settings
   acquire their authenticated provider in `Start`, after BepInEx's `Awake` setup.
 - `WindowVisits.cs`: Unity-free custom save-data example. Four-byte nonnegative
   counter, schema version 1; invalid payloads are rejected, not silently reset.

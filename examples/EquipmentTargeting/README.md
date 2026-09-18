@@ -11,7 +11,7 @@ unreleased API, not public 0.2.8).
 
 | Ability | How the example uses it |
 |---|---|
-| **Equipment policy** (`IEquipmentService.ConfigurePlayerTractorModules`) | When `ExtraAutoBeam` is on, the autopilot may borrow one free manual beam; when off the callback returns `null` and vanilla behavior is untouched. |
+| **Equipment policy** (`IEquipmentService.ConfigurePlayerTractorModules`) | The autopilot may borrow one free manual beam whenever every automatic beam is busy; tractors without a spare manual beam get `null` (vanilla). The `ExtraAutoBeam` row is presentation-only: it demos typed settings plumbing and gates nothing. |
 | **Abstain by returning null** | A registration that abstains is invisible — no zero-limits, no half-applied state. The first non-null answer wins; yours is not silently overridden by later registrations. |
 | **Mod-owned policy, native safety** | The `+1` capacity is this mod's formula. Target eligibility, crew, cargo and occupied-beam protections stay the game's — the API never exposes them and you never reimplement them. |
 | **Typed global preference** | The knob is a plain `ConfigEntry<bool>` — BepInEx config owns the file; no API store, no reflection. |
@@ -23,7 +23,7 @@ on the example's own trade good).
 
 ## Try it
 
-1. Deploy `EquipmentTargeting.dll` next to the API and set `ExtraAutoBeam = true` in
+1. Deploy `EquipmentTargeting.dll` next to the API and load a save with a tractor module
    `BepInEx/config/vgmodapi.example.equipment-targeting.cfg`.
 2. Dock somewhere with loot. While every automatic beam is busy, the autopilot now also uses one
    free manual beam. With the setting off, it never does.
