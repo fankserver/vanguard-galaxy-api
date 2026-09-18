@@ -149,6 +149,16 @@ All fixture state (beams, targets, temporary objects) is restored afterwards.
 Runs the in-repo EquipmentTargeting example as the mod under test: the `ExtraAutoBeam` setting
 alone gates one borrowed manual beam (off ⇒ vanilla cap, on ⇒ borrows a free manual beam).
 
+## `pickup-presentation`
+
+Drives the game's own notify path (`AbstractUnitData.NotifyItemPickup` → `UIInfoTextParent` →
+`FloatingInfoText.Show`) on non-standard vanilla items and verifies the typed pickup-presentation
+contract: a registered resolver tints the real float, an abstaining earlier rule falls through to
+the first non-null answer, a later rule stays invisible, three same-frame notifies each consume
+exactly one scoped frame with their own color (no cross-item inheritance), and disposing every
+resolver restores the vanilla pickup palette with no resolver consulted afterwards. Floats are
+identified by their rendered `+<count> <translated name>` label.
+
 ## Coverage status
 
 `fresh-session` (normal new-game lifecycle) and `pocket-worlds` (actual example,

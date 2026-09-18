@@ -134,6 +134,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             InstallHud(assembly);
             InstallEquipmentTargeting(assembly);
             InstallTooltips(assembly);
+            InstallPickupPresentation(assembly);
             InstallGameplayUi(assembly);
             InstallAmbientTraffic(assembly);
             InstallUnitProtection(assembly);
@@ -159,6 +160,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             TeardownHud();
             TeardownEquipmentTargeting();
             TeardownTooltips();
+            TeardownPickupPresentation();
             TeardownGameplayUi();
             TeardownAmbientTraffic();
             TeardownUnitProtection();
@@ -175,6 +177,7 @@ public sealed partial class Plugin : BaseUnityPlugin
             _hub.SetUnavailable("equipment", reason, ex.Message);
             _hub.SetUnavailable("skill-trees", reason, ex.Message);
             _hub.SetUnavailable("tooltips", reason, ex.Message);
+            _hub.SetUnavailable("pickup-presentation", reason, ex.Message);
             _hub.SetUnavailable("ambient-traffic", reason, ex.Message);
             _hub.SetUnavailable("unit-protection", reason, ex.Message);
             _hub.SetUnavailable("story-characters", reason, ex.Message);
@@ -1066,6 +1069,7 @@ public sealed partial class Plugin : BaseUnityPlugin
         TeardownEquipmentTargeting();
         TeardownTooltips();
         TeardownHud();
+        TeardownPickupPresentation();
         TeardownGameplayUi();
         TeardownAmbientTraffic();
         TeardownUnitProtection();
