@@ -8,7 +8,8 @@ using UnityEngine;
 namespace VGModAPI.E2E;
 
 // Exercises examples/EquipmentTargeting: the one targeting decision the example owns. Its
-// settings toggle alone decides whether the tractor autopilot may borrow one free manual beam.
+// Its contribution — borrowing one free manual beam when every automatic beam is busy — is
+// always active so it is observable in play; the example's settings row is presentation-only.
 internal static class EquipmentTargetingCase
 {
     internal const string Id = "equipment-targeting";
@@ -25,7 +26,7 @@ internal static class EquipmentTargetingCase
     internal static IReadOnlyList<TestStep> Steps(ILifecycleService lifecycle, List<LifecycleEvent> events)
     {
         var steps = new List<TestStep>(LiveBoot.Steps("vgmodapi.example.equipment-targeting", lifecycle, events));
-        steps.Add(new TestStep("settings-gated beam borrowing", "EquipmentTargeting example", 30, Run));
+        steps.Add(new TestStep("always-active borrowing that a presentation-only row cannot gate", "EquipmentTargeting example", 30, Run));
         return steps;
     }
 
@@ -57,14 +58,12 @@ internal static class EquipmentTargetingCase
             foreach (var b in all) Busy(b, false);
             foreach (var b in auto) Busy(b, true);
 
-            // Settings-driven equipment policy: off abstains (vanilla cap), on borrows one free manual beam.
+            // The example's policy is always active; its presentation-only row must not change it.
             extraValue.SetValue(extraEntry, false);
-            Require(Request(false) == null, "example promoted beams with ExtraAutoBeam off");
+            Require(manual.Contains(Request(false)!), "presentation row off disabled the example's borrowing");
             extraValue.SetValue(extraEntry, true);
-            Require(manual.Contains(Request(false)!), "ExtraAutoBeam did not borrow a free manual beam");
-            extraValue.SetValue(extraEntry, false);
-            Require(Request(false) == null, "ExtraAutoBeam stayed active after being turned off");
-            Debug.Log("EquipmentTargeting E2E passed: the ExtraAutoBeam setting alone gates borrowing one free manual beam.");
+            Require(manual.Contains(Request(false)!), "presentation row on failed to keep the example borrowing");
+            Debug.Log("EquipmentTargeting E2E passed: borrowing is always active and the presentation row gates nothing.");
             return StepResult.Pass("EquipmentTargeting example behavior verified");
         }
         finally

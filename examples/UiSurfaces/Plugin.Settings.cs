@@ -21,23 +21,23 @@ public sealed partial class Plugin
         _opacity = Config.Bind("Window", "Opacity", .9f, new ConfigDescription("Example window opacity.", new AcceptableValueRange<float>(.3f, 1f)));
         _theme = Config.Bind("Window", "Theme", "blue", new ConfigDescription("Example window theme.", new AcceptableValueList<string>("blue", "amber")));
         _showGoal = Config.Bind("Behavior", "ShowVisitGoal", true, "Show the global visit goal beside this save's count.");
-        _annotate = Config.Bind("Tooltips", "AnnotateModules", false, "Add this mod's note to ship module stat lists and the Engineering mastery badge.");
+        _annotate = Config.Bind("Tooltips", "AnnotateModules", true, "Demo setting (presentation only): tooltip annotations are always shown in this example.");
         Config.SettingChanged += PreferenceChanged;
     }
 
     private void Start()
     {
-        // Tooltip contributions belong to the UI surfaces this example owns. They are registered
-        // unconditionally and gated by a typed preference: the callback abstains when it is off.
+        // Tooltip contributions belong to the UI surfaces this example owns and are always shown,
+        // so the surface is visible without touching any setting. The AnnotateModules row below
+        // stays purely presentational: it demos typed settings plumbing and gates nothing.
         _moduleTip = ModApi.Services.Tooltips.RegisterShipModule(Id, (module, tip) =>
         {
-            if (!_annotate.Value) return;
             tip.AddLine($"UiSurfaces: {module.Kind} module, quality {module.QualityLevel}"
                 + (module.Tractor is { } tractor ? $" with {tractor.ManualBeamCount} manual beam(s)" : ""));
         });
         _treeTip = ModApi.Services.Tooltips.RegisterSkillTree(Id, (tree, tip) =>
         {
-            if (!_annotate.Value || tree.Specialization != CommanderSpecialization.Engineering) return;
+            if (tree.Specialization != CommanderSpecialization.Engineering) return;
             tip.AddLine($"UiSurfaces: Engineering mastery {tree.MasteryLevel}/{tree.MaximumLevel}", TooltipTextStyle.Bonus);
         });
         // Instance authentication is available after BepInEx has finished Awake. They stay live even
@@ -55,7 +55,7 @@ public sealed partial class Plugin
             () => _theme.Value, value => _theme.Value = value, order: 3));
         Publish(new BoolModSetting("show-goal", "Behavior", "Show visit goal", "Show or hide the global goal beside this save's progress.",
             (bool)_showGoal.DefaultValue, () => _showGoal.Value, value => _showGoal.Value = value, order: 0));
-        Publish(new BoolModSetting("annotate-tooltips", "Tooltips", "Annotate modules and mastery", "Opt in to the tooltip contributions demonstrated below.",
+        Publish(new BoolModSetting("annotate-tooltips", "Tooltips", "Annotate modules and mastery", "Demo row: annotations are always shown.",
             (bool)_annotate.DefaultValue, () => _annotate.Value, value => _annotate.Value = value, order: 0));
     }
 
